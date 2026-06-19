@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // url is removed from here
 }
 
 model User {
@@ -25,6 +24,8 @@ model Customer {
   bottleCount Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  orders      Order[]
 }
 
 model Order {
@@ -34,13 +35,16 @@ model Order {
   status      String   @default("pending")
   totalAmount Float
   createdAt   DateTime @default(now())
-  customer    Customer @relation(fields: [customerId], references: [id])
+
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
 }
 
 model Inventory {
   id        String   @id @default(cuid())
   itemName  String
   quantity  Int
-  unit      String
+  unit      String   @default("bottles")
   updatedAt DateTime @updatedAt
 }

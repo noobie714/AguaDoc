@@ -3,17 +3,19 @@ const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 
 const app = express();
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  log: ['query', 'info', 'warn', 'error'],
+});
 
 app.use(cors());
 app.use(express.json());
 
-// Test route
+// Test Route
 app.get('/api', (req, res) => {
-  res.json({ message: "AguaDoc Backend is running!" });
+  res.json({ message: "✅ AguaDoc Backend is running!" });
 });
 
-// AUTH
+// ====================== AUTH ROUTES ======================
 app.post('/api/register', async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
@@ -22,6 +24,7 @@ app.post('/api/register', async (req, res) => {
     });
     res.json({ success: true, user: { ...user, password: undefined } });
   } catch (error) {
+    console.error(error);
     res.status(400).json({ success: false, message: error.message });
   }
 });
@@ -37,11 +40,12 @@ app.post('/api/login', async (req, res) => {
       res.status(401).json({ success: false, message: "Invalid credentials" });
     }
   } catch (error) {
+    console.error(error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-// CUSTOMERS CRUD
+// ====================== CUSTOMERS CRUD ======================
 app.get('/api/customers', async (req, res) => {
   const customers = await prisma.customer.findMany();
   res.json(customers);
@@ -53,11 +57,15 @@ app.post('/api/customers', async (req, res) => {
 });
 
 app.put('/api/customers/:id', async (req, res) => {
-  const customer = await prisma.customer.update({
-    where: { id: req.params.id },
-    data: req.body
-  });
-  res.json(customer);
+  try {
+    const customer = await prisma.customer.update({
+      where: { id: req.params.id },
+      data: req.body
+    });
+    res.json(customer);
+  } catch (error) {
+    res.status(404).json({ message: "Customer not found" });
+  }
 });
 
 app.delete('/api/customers/:id', async (req, res) => {
