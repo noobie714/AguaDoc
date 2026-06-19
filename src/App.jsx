@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { AppProvider } from './context/AppContext';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import CustomerDashboard from './pages/CustomerDashboard';
 import DashboardPage from './pages/DashboardPage';
 import CustomersPage from './pages/CustomersPage';
 import OrdersPage from './pages/OrdersPage';
@@ -14,16 +16,40 @@ import NotificationsPage from './pages/NotificationsPage';
 import PredictionsPage from './pages/PredictionsPage';
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser]       = useState(null);
+  const [screen, setScreen]   = useState('login'); // 'login' | 'register'
 
-  if (!isLoggedIn) {
-    return <LoginPage onLogin={() => setIsLoggedIn(true)} />;
+  const handleLogin  = (u) => setUser(u);
+  const handleLogout = ()  => { setUser(null); setScreen('login'); };
+
+  // Not logged in
+  if (!user) {
+    if (screen === 'register') {
+      return (
+        <RegisterPage
+          onGoLogin={() => setScreen('login')}
+          onLogin={handleLogin}
+        />
+      );
+    }
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+        onGoRegister={() => setScreen('register')}
+      />
+    );
   }
 
+  // Customer role → customer dashboard
+  if (user.role === 'customer') {
+    return <CustomerDashboard user={user} onLogout={handleLogout} />;
+  }
+
+  // Admin/Staff role → admin panel
   return (
     <AppProvider>
       <BrowserRouter>
-        <AppLayout onLogout={() => setIsLoggedIn(false)}>
+        <AppLayout onLogout={handleLogout}>
           <Routes>
             <Route path="/"              element={<Navigate to="/dashboard" />} />
             <Route path="/dashboard"     element={<DashboardPage />} />
