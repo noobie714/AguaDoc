@@ -1,10 +1,14 @@
-import { createContext, useContext, useReducer } from 'react';
+// src/context/AppContext.jsx
+import { createContext, useContext, useReducer, useEffect } from 'react';
 import { initialState } from '../data/mockData';
+import { apiGetCustomers } from '../api';
 
 const AppContext = createContext(null);
 
 function reducer(state, action) {
   switch (action.type) {
+    case 'SET_CUSTOMERS':
+      return { ...state, customers: action.payload };
     case 'ADD_CUSTOMER':
       return { ...state, customers: [...state.customers, action.payload], cid: state.cid + 1 };
     case 'ADD_ORDER':
@@ -37,6 +41,22 @@ function reducer(state, action) {
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+
+  // Load customers from backend on startup
+  useEffect(() => {
+    apiGetCustomers()
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          dispatch({ type: 'SET_CUSTOMERS', payload: data });
+        }
+        // if backend has no customers yet, mockData stays as fallback
+      })
+      .catch(() => {
+        // backend offline — mockData fallback stays
+        console.warn('Backend offline, using mock data.');
+      });
+  }, []);
+
   return (
     <AppContext.Provider value={{ state, dispatch }}>
       {children}

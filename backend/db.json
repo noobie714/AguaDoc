@@ -1,5 +1,14 @@
 {
-  "users": [],
+  "users": [
+    {
+      "id": "1781840868808",
+      "fullName": "Admin",
+      "email": "admin@aguadoc.com",
+      "password": "admin123",
+      "role": "staff",
+      "createdAt": "2026-06-19T03:47:48.808Z"
+    }
+  ],
   "customers": [],
   "orders": [],
   "inventory": [],
