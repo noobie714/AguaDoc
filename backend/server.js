@@ -47,16 +47,20 @@ app.get('/api', (req, res) => {
 
 // AUTH
 app.post('/api/register', (req, res) => {
-  const { fullName, email, password } = req.body;
-  if (db.users.find(u => u.email === email)) {
+  const { fullName, username, email, password, phone, address, gender } = req.body;
+  if (db.users.find(u => u.email === email || u.username === username)) {
     return res.status(400).json({ success: false, message: "User already exists" });
   }
   const newUser = {
     id: Date.now().toString(),
-    fullName,
+    fullName: fullName || username,
+    username,
     email,
     password,
-    role: 'staff',
+    phone,
+    address,
+    gender,
+    role: 'customer',
     createdAt: new Date().toISOString()
   };
   db.users.push(newUser);
@@ -65,8 +69,10 @@ app.post('/api/register', (req, res) => {
 });
 
 app.post('/api/login', (req, res) => {
-  const { email, password } = req.body;
-  const user = db.users.find(u => u.email === email && u.password === password);
+  const { username, password } = req.body;
+  const user = db.users.find(u =>
+    (u.email === username || u.username === username) && u.password === password
+  );
   if (user) {
     res.json({ success: true, user: { ...user, password: undefined } });
   } else {
