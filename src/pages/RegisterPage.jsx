@@ -3,6 +3,19 @@ import { useState } from 'react';
 import { apiRegister } from '../api';
 import { Eye, EyeOff, User, Lock, Mail, Phone, MapPin, Users } from 'lucide-react';
 
+// ✅ Moved OUTSIDE — defined once, never recreated
+function Field({ label, icon: Icon, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <div className="flex items-center border border-gray-200 rounded-xl px-3 py-2.5 gap-2 focus-within:border-[#0ea5c9]">
+        <Icon size={16} className="text-gray-400 shrink-0" />
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function RegisterPage({ onGoLogin, onLogin }) {
   const [form, setForm] = useState({
     username: '', password: '', confirmPassword: '',
@@ -49,21 +62,10 @@ export default function RegisterPage({ onGoLogin, onLogin }) {
     }
   };
 
-  const Field = ({ label, icon: Icon, children }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <div className="flex items-center border border-gray-200 rounded-xl px-3 py-2.5 gap-2 focus-within:border-[#0ea5c9]">
-        <Icon size={16} className="text-gray-400 shrink-0" />
-        {children}
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#e8f4fb] to-[#d0eaf7] py-10">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm px-8 py-10">
 
-        {/* Logo */}
         <div className="flex flex-col items-center mb-5">
           <div className="w-14 h-14 bg-[#0ea5c9] rounded-2xl flex items-center justify-center mb-3 shadow-md">
             <span className="text-white text-2xl">💧</span>
@@ -124,11 +126,8 @@ export default function RegisterPage({ onGoLogin, onLogin }) {
 
           {error && <p className="text-red-500 text-xs text-center">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#0ea5c9] hover:bg-[#0284a8] text-white font-semibold py-3 rounded-xl transition disabled:opacity-60 text-sm mt-1"
-          >
+          <button type="submit" disabled={loading}
+            className="w-full bg-[#0ea5c9] hover:bg-[#0284a8] text-white font-semibold py-3 rounded-xl transition disabled:opacity-60 text-sm mt-1">
             {loading ? 'Registering...' : 'Register'}
           </button>
         </form>
