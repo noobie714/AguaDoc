@@ -7,6 +7,18 @@
       "password": "admin123",
       "role": "staff",
       "createdAt": "2026-06-19T03:47:48.808Z"
+    },
+    {
+      "id": "1781847992515",
+      "fullName": "testuser1",
+      "username": "testuser1",
+      "email": "test@gmail.com",
+      "password": "test123",
+      "phone": "123456789",
+      "address": "mandaue,cambaro,cebu",
+      "gender": "Male",
+      "role": "customer",
+      "createdAt": "2026-06-19T05:46:32.515Z"
     }
   ],
   "customers": [],

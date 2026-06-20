@@ -1,6 +1,6 @@
-// src/pages/CustomerDashboard.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LayoutDashboard, ShoppingCart, CreditCard, LogOut, Bell } from 'lucide-react';
+import { apiGetOrders } from '../api';
 
 const NAV = [
   { icon: LayoutDashboard, label: 'Dashboard',       id: 'dashboard' },
@@ -9,20 +9,41 @@ const NAV = [
   { icon: CreditCard,      label: 'Billing History', id: 'billing'   },
 ];
 
-const STATS = [
-  { emoji: '📋', label: 'TOTAL ORDER',      key: 'total'     },
-  { emoji: '⏳', label: 'ACTIVE SERVICES',  key: 'active'    },
-  { emoji: '✅', label: 'READY',            key: 'ready'     },
-  { emoji: '🏁', label: 'DELIVERED',        key: 'delivered' },
-];
+const STATUS_STYLE = {
+  Pending:   'bg-yellow-50 text-yellow-600',
+  Active:    'bg-blue-50 text-blue-600',
+  Ready:     'bg-green-50 text-green-600',
+  Delivered: 'bg-gray-100 text-gray-500',
+};
 
 export default function CustomerDashboard({ user, onLogout }) {
-  const [active, setActive] = useState('dashboard');
+  const [active, setActive]   = useState('dashboard');
+  const [orders, setOrders]   = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const stats   = { total: 0, active: 0, ready: 0, delivered: 0 };
-  const orders  = [];
-  const initials = (user?.username || user?.fullName || 'U').slice(0, 1).toUpperCase();
+  useEffect(() => {
+    apiGetOrders(user.id)
+      .then(data => { setOrders(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [user.id]);
+
+  const stats = {
+    total:     orders.length,
+    active:    orders.filter(o => o.status === 'Active' || o.status === 'Pending').length,
+    ready:     orders.filter(o => o.status === 'Ready').length,
+    delivered: orders.filter(o => o.status === 'Delivered').length,
+  };
+
+  const STATS = [
+    { emoji: '📋', label: 'TOTAL ORDER',     key: 'total'     },
+    { emoji: '⏳', label: 'ACTIVE SERVICES', key: 'active'    },
+    { emoji: '✅', label: 'READY',           key: 'ready'     },
+    { emoji: '🏁', label: 'DELIVERED',       key: 'delivered' },
+  ];
+
+  const initials  = (user?.username || user?.fullName || 'U').slice(0, 1).toUpperCase();
   const firstName = (user?.fullName || user?.username || 'User').split(' ')[0];
+  const recentOrders = [...orders].reverse().slice(0, 10);
 
   return (
     <div className="flex h-screen bg-[#f0f6fb] overflow-hidden">
@@ -35,19 +56,12 @@ export default function CustomerDashboard({ user, onLogout }) {
           </div>
           <span className="text-white font-bold text-base">AguaDoc.</span>
         </div>
-
         <nav className="flex flex-col gap-1 flex-1">
           {NAV.map(({ icon: Icon, label, id }) => (
-            <button
-              key={id}
-              onClick={() => setActive(id)}
+            <button key={id} onClick={() => setActive(id)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition text-left
-                ${active === id
-                  ? 'bg-[#0ea5c9] text-white'
-                  : 'text-gray-300 hover:bg-white/10'}`}
-            >
-              <Icon size={16} />
-              {label}
+                ${active === id ? 'bg-[#0ea5c9] text-white' : 'text-gray-300 hover:bg-white/10'}`}>
+              <Icon size={16} />{label}
             </button>
           ))}
         </nav>
@@ -60,7 +74,7 @@ export default function CustomerDashboard({ user, onLogout }) {
         <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4">
           <div className="flex items-center gap-2 flex-1 bg-gray-50 rounded-xl px-4 py-2 max-w-sm">
             <span className="text-gray-400 text-sm">🔍</span>
-            <input placeholder="Search customers, orders..." className="bg-transparent text-sm outline-none flex-1 text-gray-500" />
+            <input placeholder="Search orders..." className="bg-transparent text-sm outline-none flex-1 text-gray-500" />
           </div>
           <button className="relative ml-auto text-gray-400 hover:text-gray-600">
             <Bell size={20} />
@@ -75,7 +89,7 @@ export default function CustomerDashboard({ user, onLogout }) {
           <div className="bg-[#0f2a4a] rounded-2xl px-6 py-5 flex items-center justify-between">
             <div>
               <h2 className="text-white text-lg font-semibold">Good day, {firstName}! 👋</h2>
-              <p className="text-gray-400 text-sm mt-0.5">Here's summary of your interactions and orders.</p>
+              <p className="text-gray-400 text-sm mt-0.5">Here's a summary of your interactions and orders.</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-[#0ea5c9] flex items-center justify-center text-white font-bold text-sm">
@@ -85,12 +99,9 @@ export default function CustomerDashboard({ user, onLogout }) {
                 <p className="text-white font-medium">{user?.username || user?.fullName}</p>
                 <p className="text-gray-400 text-xs">{user?.email}</p>
               </div>
-              <button
-                onClick={onLogout}
-                className="flex items-center gap-1.5 text-gray-300 hover:text-white text-sm ml-4 border border-white/20 rounded-lg px-3 py-1.5 transition"
-              >
-                <LogOut size={14} />
-                Sign Out
+              <button onClick={onLogout}
+                className="flex items-center gap-1.5 text-gray-300 hover:text-white text-sm ml-4 border border-white/20 rounded-lg px-3 py-1.5 transition">
+                <LogOut size={14} /> Sign Out
               </button>
             </div>
           </div>
@@ -101,7 +112,9 @@ export default function CustomerDashboard({ user, onLogout }) {
               <div key={key} className="bg-white rounded-2xl px-5 py-5 shadow-sm">
                 <div className="text-2xl mb-3">{emoji}</div>
                 <p className="text-xs text-gray-400 font-semibold tracking-wide">{label}</p>
-                <p className="text-2xl font-bold text-[#0f172a] mt-1">{stats[key]}</p>
+                <p className="text-2xl font-bold text-[#0f172a] mt-1">
+                  {loading ? '...' : stats[key]}
+                </p>
               </div>
             ))}
           </div>
@@ -124,19 +137,17 @@ export default function CustomerDashboard({ user, onLogout }) {
                 </tr>
               </thead>
               <tbody>
-                {orders.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="text-center text-gray-400 py-8 text-sm">
-                      No activity yet...
-                    </td>
-                  </tr>
-                ) : orders.map(order => (
+                {loading ? (
+                  <tr><td colSpan={4} className="text-center text-gray-400 py-8">Loading...</td></tr>
+                ) : recentOrders.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center text-gray-400 py-8">No activity yet...</td></tr>
+                ) : recentOrders.map(order => (
                   <tr key={order.id} className="border-b border-gray-50">
-                    <td className="py-2 text-gray-700">{order.ref}</td>
+                    <td className="py-2 text-gray-700 font-mono text-xs">{order.ref || order.id}</td>
                     <td className="py-2 text-gray-700">{order.type}</td>
-                    <td className="py-2 text-gray-500">{order.date}</td>
+                    <td className="py-2 text-gray-500">{new Date(order.date).toLocaleDateString()}</td>
                     <td className="py-2">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-600">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[order.status] || 'bg-gray-100 text-gray-500'}`}>
                         {order.status}
                       </span>
                     </td>

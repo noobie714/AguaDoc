@@ -1,39 +1,40 @@
-// src/context/AppContext.jsx
 import { createContext, useContext, useReducer, useEffect } from 'react';
-import { initialState } from '../data/mockData';
-import { apiGetCustomers } from '../api';
+import { apiGetCustomers, apiGetOrders, apiGetPayments, apiGetInventory } from '../api';
 
 const AppContext = createContext(null);
 
+const initialState = {
+  customers: [], orders: [], payments: [],
+  inventory: { waterLevel: 0, maxCapacity: 10000, readyGallons: 0, totalGallons: 0 },
+  notifications: [], loading: true
+};
+
 function reducer(state, action) {
   switch (action.type) {
+    case 'SET_ALL':
+      return { ...state, ...action.payload, loading: false };
     case 'SET_CUSTOMERS':
       return { ...state, customers: action.payload };
     case 'ADD_CUSTOMER':
-      return { ...state, customers: [...state.customers, action.payload], cid: state.cid + 1 };
+      return { ...state, customers: [...state.customers, action.payload] };
+    case 'UPDATE_CUSTOMER':
+      return { ...state, customers: state.customers.map(c => c.id === action.payload.id ? action.payload : c) };
+    case 'DELETE_CUSTOMER':
+      return { ...state, customers: state.customers.filter(c => c.id !== action.id) };
+    case 'SET_ORDERS':
+      return { ...state, orders: action.payload };
     case 'ADD_ORDER':
-      return { ...state, orders: [...state.orders, action.payload], oid: state.oid + 1 };
-    case 'UPDATE_ORDER_STATUS':
-      return { ...state, orders: state.orders.map(o => o.id === action.id ? { ...o, status: action.status } : o) };
+      return { ...state, orders: [...state.orders, action.payload] };
+    case 'UPDATE_ORDER':
+      return { ...state, orders: state.orders.map(o => o.id === action.payload.id ? action.payload : o) };
+    case 'SET_PAYMENTS':
+      return { ...state, payments: action.payload };
     case 'ADD_PAYMENT':
-      return {
-        ...state,
-        payments: [...state.payments, action.payload],
-        customers: state.customers.map(c => c.id === action.payload.custId
-          ? { ...c, balance: Math.max(0, c.balance - action.payload.amount) }
-          : c),
-        pid: state.pid + 1
-      };
-    case 'UPDATE_INVENTORY':
-      return { ...state, inventory: { ...state.inventory, ...action.payload } };
-    case 'ADD_CONTAINER':
-      return { ...state, containers: [...state.containers, action.payload] };
+      return { ...state, payments: [...state.payments, action.payload] };
+    case 'SET_INVENTORY':
+      return { ...state, inventory: action.payload };
     case 'ADD_NOTIFICATION':
-      return { ...state, notifications: [action.payload, ...state.notifications], nid: state.nid + 1 };
-    case 'MARK_READ':
-      return { ...state, notifications: state.notifications.map(n => n.id === action.id ? { ...n, read: true } : n) };
-    case 'MARK_ALL_READ':
-      return { ...state, notifications: state.notifications.map(n => ({ ...n, read: true })) };
+      return { ...state, notifications: [action.payload, ...state.notifications] };
     default:
       return state;
   }
@@ -42,19 +43,21 @@ function reducer(state, action) {
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // Load customers from backend on startup
   useEffect(() => {
-    apiGetCustomers()
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) {
-          dispatch({ type: 'SET_CUSTOMERS', payload: data });
-        }
-        // if backend has no customers yet, mockData stays as fallback
-      })
-      .catch(() => {
-        // backend offline — mockData fallback stays
-        console.warn('Backend offline, using mock data.');
+    Promise.all([
+      apiGetCustomers(),
+      apiGetOrders(),
+      apiGetPayments(),
+      apiGetInventory()
+    ]).then(([customers, orders, payments, inventory]) => {
+      dispatch({
+        type: 'SET_ALL',
+        payload: { customers, orders, payments, inventory }
       });
+    }).catch(() => {
+      console.warn('Backend offline, using empty state.');
+      dispatch({ type: 'SET_ALL', payload: { loading: false } });
+    });
   }, []);
 
   return (
