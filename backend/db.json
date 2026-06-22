@@ -19,6 +19,18 @@
       "gender": "Male",
       "role": "customer",
       "createdAt": "2026-06-19T05:46:32.515Z"
+    },
+    {
+      "id": "1781941700367",
+      "fullName": "lanceamoin",
+      "username": "lanceamoin",
+      "email": "lanceamoin@gmail.com",
+      "password": "lance123",
+      "phone": "09090945632",
+      "address": "lapulapucity",
+      "gender": "Male",
+      "role": "customer",
+      "createdAt": "2026-06-20T07:48:20.367Z"
     }
   ],
   "customers": [],
