@@ -4,8 +4,8 @@ import { apiGetCustomers, apiGetOrders, apiGetPayments, apiGetInventory } from '
 const AppContext = createContext(null);
 
 const initialState = {
-  customers: [], orders: [], payments: [],
-  inventory: { waterLevel: 0, maxCapacity: 10000, readyGallons: 0, totalGallons: 0 },
+  customers: [], orders: [], payments: [], containers: [],
+  inventory: { readyGallons: 0, totalGallons: 0, waterLevel: 0, maxCapacity: 10000 },
   notifications: [], loading: true
 };
 

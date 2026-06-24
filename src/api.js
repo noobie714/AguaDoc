@@ -86,3 +86,20 @@ export async function apiUpdateInventory(data) {
   });
   return res.json();
 }
+
+// CONTAINERS
+export async function apiGetContainers() {
+  const res = await fetch(`/api/containers`);
+  return res.json();
+}
+export async function apiAddContainer(data) {
+  const res = await fetch(`/api/containers`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+export async function apiDeleteContainer(id) {
+  const res = await fetch(`/api/containers/${id}`, { method: 'DELETE' });
+  return res.json();
+}
