@@ -186,43 +186,144 @@ export default function CustomerDashboard({ user, onLogout }) {
 
           {/* ── My Orders Page ── */}
           {active === 'orders' && (
-            <div className="bg-white rounded-2xl shadow-sm p-5">
-              <h3 className="font-semibold text-[#0f172a] mb-4">My Orders</h3>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-400 text-xs border-b border-gray-100">
-                    <th className="text-left pb-2 font-semibold">REF #</th>
-                    <th className="text-left pb-2 font-semibold">TYPE</th>
-                    <th className="text-left pb-2 font-semibold">QTY</th>
-                    <th className="text-left pb-2 font-semibold">TOTAL</th>
-                    <th className="text-left pb-2 font-semibold">DATE</th>
-                    <th className="text-left pb-2 font-semibold">STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">Loading...</td></tr>
-                  ) : orders.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center text-gray-400 py-8">No orders yet...</td></tr>
-                  ) : [...orders].reverse().map(order => (
-                    <tr key={order.id} className="border-b border-gray-50">
-                      <td className="py-2 text-gray-700 font-mono text-xs">{order.ref || order.id}</td>
-                      <td className="py-2 text-gray-700">{order.type}</td>
-                      <td className="py-2 text-gray-700">{order.quantity}</td>
-                      <td className="py-2 text-gray-700">₱{order.total}</td>
-                      <td className="py-2 text-gray-500">{new Date(order.date).toLocaleDateString()}</td>
-                      <td className="py-2">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[order.status] || 'bg-gray-100 text-gray-500'}`}>
-                          {order.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-4">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-[#0f172a]">My Orders</h2>
+                  <p className="text-sm text-gray-400 mt-0.5">Track all your orders and their current status.</p>
+                </div>
+                <button
+                  onClick={() => setActive('request')}
+                  className="bg-[#0ea5c9] hover:bg-[#0284a8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+                >
+                  + New Order
+                </button>
+              </div>
+
+              {loading ? (
+                <div className="bg-white rounded-2xl shadow-sm p-10 text-center text-gray-400">Loading...</div>
+              ) : orders.length === 0 ? (
+                <div className="bg-white rounded-2xl shadow-sm p-10 text-center">
+                  <div className="text-4xl mb-3">📦</div>
+                  <p className="text-gray-500 font-medium">No orders yet</p>
+                  <p className="text-gray-400 text-sm mt-1">Place your first order to get started.</p>
+                  <button
+                    onClick={() => setActive('request')}
+                    className="mt-4 bg-[#0ea5c9] hover:bg-[#0284a8] text-white text-sm font-semibold px-5 py-2 rounded-xl transition"
+                  >
+                    Request Service
+                  </button>
+                </div>
+              ) : (
+                [...orders].reverse().map(order => {
+                  const isWalkin = order.type === 'Walk-in / Pickup';
+
+                  // Define steps based on order type
+                  const steps = isWalkin
+                    ? ['Pending', 'Processing', 'Ready to Go']
+                    : ['Pending', 'Processing', 'Delivered'];
+
+                  const stepIndex = {
+                    'Pending':     0,
+                    'Processing':  1,
+                    'Active':      1,
+                    'Ready':       2,
+                    'Ready to Go': 2,
+                    'Delivered':   2,
+                  };
+
+                  const currentStep = stepIndex[order.status] ?? 0;
+
+                  const STEP_ICON = isWalkin
+                    ? ['🕐', '⚙️', '✅']
+                    : ['🕐', '⚙️', '🚚'];
+
+                  const statusColor = {
+                    'Pending':     'bg-yellow-100 text-yellow-700',
+                    'Processing':  'bg-blue-100 text-blue-700',
+                    'Active':      'bg-blue-100 text-blue-700',
+                    'Ready':       'bg-green-100 text-green-700',
+                    'Ready to Go': 'bg-green-100 text-green-700',
+                    'Delivered':   'bg-gray-100 text-gray-500',
+                  };
+
+                  return (
+                    <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                      {/* Order header */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-bold text-[#0f172a]">
+                              {order.ref || order.id}
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusColor[order.status] || 'bg-gray-100 text-gray-500'}`}>
+                              {order.status}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                            <span>{order.type}</span>
+                            <span>•</span>
+                            <span>{order.quantity} gallon{order.quantity > 1 ? 's' : ''}</span>
+                            <span>•</span>
+                            <span>{new Date(order.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-black text-[#0ea5c9]">₱{order.total}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {isWalkin ? 'Pay on arrival' : order.payMethod || 'Online payment'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Status tracker */}
+                      <div className="flex items-center">
+                        {steps.map((label, i) => {
+                          const done   = currentStep > i;
+                          const active = currentStep === i;
+                          return (
+                            <div key={i} className="flex items-center flex-1 last:flex-none">
+                              <div className="flex flex-col items-center">
+                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-base border-2 transition
+                                  ${done    ? 'bg-[#0ea5c9] border-[#0ea5c9]'
+                                  : active  ? 'bg-white border-[#0ea5c9]'
+                                           : 'bg-white border-gray-200'}`}>
+                                  {done ? (
+                                    <span className="text-white text-sm">✓</span>
+                                  ) : (
+                                    <span className={active ? '' : 'grayscale opacity-40'}>
+                                      {STEP_ICON[i]}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className={`text-xs mt-1.5 font-semibold text-center leading-tight
+                                  ${done ? 'text-[#0ea5c9]' : active ? 'text-[#0f172a]' : 'text-gray-300'}`}>
+                                  {label}
+                                </span>
+                              </div>
+                              {i < steps.length - 1 && (
+                                <div className={`flex-1 h-0.5 mx-2 mb-5 rounded ${done ? 'bg-[#0ea5c9]' : 'bg-gray-200'}`} />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Address/notes if delivery */}
+                      {!isWalkin && order.address && (
+                        <div className="mt-3 pt-3 border-t border-gray-100 flex items-start gap-2 text-xs text-gray-400">
+                          <span>📍</span>
+                          <span>{order.address}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
-
+          
           {/* ── Billing History ── */}
           {active === 'billing' && (
             <div className="bg-white rounded-2xl shadow-sm p-5">
