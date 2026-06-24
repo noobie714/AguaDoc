@@ -1,7 +1,6 @@
 const express = require('express');
 const cors    = require('cors');
-const fs      = require('fs');
-const path    = require('path');
+const mysql   = require('mysql2/promise');
 
 const app  = express();
 const PORT = 5000;
@@ -9,129 +8,180 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
-const DATA_FILE = path.join(__dirname, 'db.json');
+// ── DB Connection ──
+const pool = mysql.createPool({
+  host:     'localhost',
+  user:     'root',
+  password: '',        // XAMPP default is empty password
+  database: 'aguadoc',
+  waitForConnections: true,
+  connectionLimit: 10,
+});
 
-let db = { users: [], customers: [], orders: [], payments: [], inventory: {
-  waterLevel: 1500, maxCapacity: 10000, readyGallons: 45, totalGallons: 176
-}};
+// Test connection on startup
+pool.getConnection()
+  .then(conn => { console.log('✅ MySQL connected!'); conn.release(); })
+  .catch(err => console.error('❌ MySQL connection failed:', err.message));
 
-function loadDB() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      if (!db.inventory) db.inventory = { waterLevel: 1500, maxCapacity: 10000, readyGallons: 45, totalGallons: 176 };
-    } else {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
-    }
-  } catch (err) { console.error("Error loading DB:", err); }
-}
-
-function saveDB() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
-}
-
-loadDB();
+// ── Helper ──
+const id = () => Date.now().toString();
 
 // ====================== ROUTES ======================
 
-app.get('/api', (req, res) => res.json({ message: "✅ AguaDoc Backend is running!" }));
+app.get('/api', (req, res) => res.json({ message: '✅ AguaDoc Backend is running!' }));
 
-// AUTH
-app.post('/api/register', (req, res) => {
+// ── AUTH ──
+app.post('/api/register', async (req, res) => {
   const { fullName, username, email, password, phone, address, gender } = req.body;
-  if (db.users.find(u => u.email === email || u.username === username)) {
-    return res.status(400).json({ success: false, message: "User already exists" });
+  try {
+    const [existing] = await pool.query(
+      'SELECT id FROM users WHERE email = ? OR username = ?', [email, username]
+    );
+    if (existing.length > 0)
+      return res.status(400).json({ success: false, message: 'User already exists' });
+
+    const newId = id();
+    await pool.query(
+      'INSERT INTO users (id, fullName, username, email, password, phone, address, gender, role) VALUES (?,?,?,?,?,?,?,?,?)',
+      [newId, fullName || username, username, email, password, phone, address, gender, 'customer']
+    );
+    res.json({ success: true, user: { id: newId, fullName: fullName || username, username, email, phone, address, gender, role: 'customer' } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
-  const newUser = {
-    id: Date.now().toString(),
-    fullName: fullName || username,
-    username, email, password, phone, address, gender,
-    role: 'customer',
-    createdAt: new Date().toISOString()
-  };
-  db.users.push(newUser);
-  saveDB();
-  res.json({ success: true, user: { ...newUser, password: undefined } });
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
-  const user = db.users.find(u =>
-    (u.email === username || u.username === username) && u.password === password
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM users WHERE (email = ? OR username = ?) AND password = ?',
+      [username, username, password]
+    );
+    if (rows.length === 0)
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    const { password: _, ...user } = rows[0];
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── CUSTOMERS ──
+app.get('/api/customers', async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM customers ORDER BY createdAt DESC');
+  res.json(rows);
+});
+
+app.post('/api/customers', async (req, res) => {
+  const { fullName, email, phone, address, balance } = req.body;
+  const newId = id();
+  await pool.query(
+    'INSERT INTO customers (id, fullName, email, phone, address, balance) VALUES (?,?,?,?,?,?)',
+    [newId, fullName, email, phone, address, balance || 0]
   );
-  if (user) res.json({ success: true, user: { ...user, password: undefined } });
-  else res.status(401).json({ success: false, message: "Invalid credentials" });
+  const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [newId]);
+  res.json(rows[0]);
 });
 
-// CUSTOMERS
-app.get('/api/customers', (req, res) => res.json(db.customers));
-
-app.post('/api/customers', (req, res) => {
-  const newCustomer = { id: Date.now().toString(), ...req.body, createdAt: new Date().toISOString() };
-  db.customers.push(newCustomer);
-  saveDB();
-  res.json(newCustomer);
+app.put('/api/customers/:id', async (req, res) => {
+  const { fullName, email, phone, address, balance } = req.body;
+  await pool.query(
+    'UPDATE customers SET fullName=?, email=?, phone=?, address=?, balance=? WHERE id=?',
+    [fullName, email, phone, address, balance, req.params.id]
+  );
+  const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [req.params.id]);
+  res.json(rows[0]);
 });
 
-app.put('/api/customers/:id', (req, res) => {
-  const idx = db.customers.findIndex(c => c.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ success: false, message: "Not found" });
-  db.customers[idx] = { ...db.customers[idx], ...req.body };
-  saveDB();
-  res.json(db.customers[idx]);
-});
-
-app.delete('/api/customers/:id', (req, res) => {
-  db.customers = db.customers.filter(c => c.id !== req.params.id);
-  saveDB();
+app.delete('/api/customers/:id', async (req, res) => {
+  await pool.query('DELETE FROM customers WHERE id = ?', [req.params.id]);
   res.json({ success: true });
 });
 
-// ORDERS
-app.get('/api/orders', (req, res) => {
+// ── ORDERS ──
+app.get('/api/orders', async (req, res) => {
   const { userId } = req.query;
-  if (userId) return res.json(db.orders.filter(o => o.userId === userId));
-  res.json(db.orders);
+  const [rows] = userId
+    ? await pool.query('SELECT * FROM orders WHERE userId = ? ORDER BY date DESC', [userId])
+    : await pool.query('SELECT * FROM orders ORDER BY date DESC');
+  res.json(rows);
 });
 
-app.post('/api/orders', (req, res) => {
-  const newOrder = {
-    id: Date.now().toString(),
-    ref: 'ORD-' + Date.now().toString().slice(-6),
-    ...req.body,
-    date: new Date().toISOString(),
-    status: 'Pending'
-  };
-  db.orders.push(newOrder);
-  saveDB();
-  res.json(newOrder);
+app.post('/api/orders', async (req, res) => {
+  const { userId, type, quantity, status } = req.body;
+  const newId  = id();
+  const newRef = 'ORD-' + newId.slice(-6);
+  await pool.query(
+    'INSERT INTO orders (id, ref, userId, type, quantity, status) VALUES (?,?,?,?,?,?)',
+    [newId, newRef, userId, type, quantity || 1, status || 'Pending']
+  );
+  const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [newId]);
+  res.json(rows[0]);
 });
 
-app.put('/api/orders/:id', (req, res) => {
-  const idx = db.orders.findIndex(o => o.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ success: false, message: "Not found" });
-  db.orders[idx] = { ...db.orders[idx], ...req.body };
-  saveDB();
-  res.json(db.orders[idx]);
+app.put('/api/orders/:id', async (req, res) => {
+  const { status, type, quantity } = req.body;
+  await pool.query(
+    'UPDATE orders SET status=?, type=?, quantity=? WHERE id=?',
+    [status, type, quantity, req.params.id]
+  );
+  const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+  res.json(rows[0]);
 });
 
-// PAYMENTS
-app.get('/api/payments', (req, res) => res.json(db.payments));
-
-app.post('/api/payments', (req, res) => {
-  const newPayment = { id: Date.now().toString(), ...req.body, date: new Date().toISOString() };
-  db.payments.push(newPayment);
-  saveDB();
-  res.json(newPayment);
+// ── PAYMENTS ──
+app.get('/api/payments', async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM payments ORDER BY date DESC');
+  res.json(rows);
 });
 
-// INVENTORY
-app.get('/api/inventory', (req, res) => res.json(db.inventory));
+app.post('/api/payments', async (req, res) => {
+  const { custId, amount, method } = req.body;
+  const newId = id();
+  await pool.query(
+    'INSERT INTO payments (id, custId, amount, method) VALUES (?,?,?,?)',
+    [newId, custId, amount, method]
+  );
+  const [rows] = await pool.query('SELECT * FROM payments WHERE id = ?', [newId]);
+  res.json(rows[0]);
+});
 
-app.put('/api/inventory', (req, res) => {
-  db.inventory = { ...db.inventory, ...req.body };
-  saveDB();
-  res.json(db.inventory);
+// ── INVENTORY ──
+app.get('/api/inventory', async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM inventory WHERE id = 1');
+  res.json(rows[0]);
+});
+
+app.put('/api/inventory', async (req, res) => {
+  const { waterLevel, maxCapacity, readyGallons, totalGallons } = req.body;
+  await pool.query(
+    'UPDATE inventory SET waterLevel=?, maxCapacity=?, readyGallons=?, totalGallons=? WHERE id=1',
+    [waterLevel, maxCapacity, readyGallons, totalGallons]
+  );
+  const [rows] = await pool.query('SELECT * FROM inventory WHERE id = 1');
+  res.json(rows[0]);
+});
+
+// ── CONTAINERS ──
+app.get('/api/containers', async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM containers ORDER BY createdAt DESC');
+  res.json(rows);
+});
+
+app.post('/api/containers', async (req, res) => {
+  const { id: cid, status, lastRefill } = req.body;
+  await pool.query(
+    'INSERT INTO containers (id, status, lastRefill) VALUES (?,?,?)',
+    [cid, status, lastRefill]
+  );
+  const [rows] = await pool.query('SELECT * FROM containers WHERE id = ?', [cid]);
+  res.json(rows[0]);
+});
+
+app.delete('/api/containers/:id', async (req, res) => {
+  await pool.query('DELETE FROM containers WHERE id = ?', [req.params.id]);
+  res.json({ success: true });
 });
 
 app.listen(PORT, () => console.log(`🚀 AguaDoc Backend running on http://localhost:${PORT}`));
