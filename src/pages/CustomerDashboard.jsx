@@ -66,6 +66,14 @@ export default function CustomerDashboard({ user, onLogout }) {
             </button>
           ))}
         </nav>
+
+        {/* Sign Out pinned to bottom of sidebar */}
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-300 hover:bg-red-500/20 hover:text-red-400 transition mt-2"
+        >
+          <LogOut size={16} /> Sign Out
+        </button>
       </aside>
 
       {/* Main */}
