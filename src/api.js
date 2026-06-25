@@ -103,3 +103,7 @@ export async function apiDeleteContainer(id) {
   const res = await fetch(`/api/containers/${id}`, { method: 'DELETE' });
   return res.json();
 }
+export async function apiGetUsers() {
+  const res = await fetch(`/api/users`);
+  return res.json();
+}

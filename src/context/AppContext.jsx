@@ -1,10 +1,10 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
-import { apiGetCustomers, apiGetOrders, apiGetPayments, apiGetInventory } from '../api';
+import { apiGetCustomers, apiGetOrders, apiGetPayments, apiGetInventory, apiGetContainers, apiGetUsers } from '../api';
 
 const AppContext = createContext(null);
 
 const initialState = {
-  customers: [], orders: [], payments: [], containers: [],
+  customers: [], orders: [], payments: [], containers: [], users: [],
   inventory: { readyGallons: 0, totalGallons: 0, waterLevel: 0, maxCapacity: 10000 },
   notifications: [], loading: true
 };
@@ -35,6 +35,8 @@ function reducer(state, action) {
       return { ...state, inventory: action.payload };
     case 'ADD_NOTIFICATION':
       return { ...state, notifications: [action.payload, ...state.notifications] };
+    case 'SET_USERS':
+      return { ...state, users: action.payload };
     default:
       return state;
   }
@@ -44,21 +46,23 @@ export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   useEffect(() => {
-    Promise.all([
-      apiGetCustomers(),
-      apiGetOrders(),
-      apiGetPayments(),
-      apiGetInventory()
-    ]).then(([customers, orders, payments, inventory]) => {
-      dispatch({
-        type: 'SET_ALL',
-        payload: { customers, orders, payments, inventory }
-      });
-    }).catch(() => {
-      console.warn('Backend offline, using empty state.');
-      dispatch({ type: 'SET_ALL', payload: { loading: false } });
+  Promise.all([
+    apiGetCustomers(),
+    apiGetOrders(),
+    apiGetPayments(),
+    apiGetInventory(),
+    apiGetContainers(),
+    apiGetUsers()
+  ]).then(([customers, orders, payments, inventory, containers, users]) => {
+    dispatch({
+      type: 'SET_ALL',
+      payload: { customers, orders, payments, inventory, containers, users }
     });
-  }, []);
+  }).catch(() => {
+    console.warn('Backend offline, using empty state.');
+    dispatch({ type: 'SET_ALL', payload: { loading: false } });
+  });
+}, []);
 
   return (
     <AppContext.Provider value={{ state, dispatch }}>

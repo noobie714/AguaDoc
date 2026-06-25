@@ -28,17 +28,19 @@ export default function OrdersPage() {
   // ── Resolve customer name ──
   // Orders from customers use userId; orders from admin use custId
   function getCustomerName(o) {
-    const id = o.userId || o.custId;
-    if (!id) return '—';
+  const id = o.userId || o.custId;
+  if (!id) return '—';
 
-    // Try matching against users (customers who registered)
-    const user = (state.customers || []).find(
-      c => String(c.id) === String(id)
-    );
-    if (user) return user.fullName || user.username || user.name || '—';
+  // Check registered users first (customer portal orders)
+  const user = (state.users || []).find(u => String(u.id) === String(id));
+  if (user) return user.fullName || user.username || '—';
 
-    return '—';
-  }
+  // Fallback: check customers table (admin-created orders)
+  const customer = (state.customers || []).find(c => String(c.id) === String(id));
+  if (customer) return customer.fullName || customer.name || '—';
+
+  return '—';
+}
 
   // ── Mark as Processing ──
   async function handleMarkProcessing(o) {
