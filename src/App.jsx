@@ -16,11 +16,23 @@ import NotificationsPage from './pages/NotificationsPage';
 import PredictionsPage from './pages/PredictionsPage';
 
 function App() {
-  const [user, setUser]       = useState(null);
-  const [screen, setScreen]   = useState('login'); // 'login' | 'register'
+  const [user, setUser]     = useState(() => {
+  try {
+    const saved = localStorage.getItem('aguadoc_user');
+    return saved ? JSON.parse(saved) : null;
+  } catch { return null; }
+});
+const [screen, setScreen] = useState('login');
 
-  const handleLogin  = (u) => setUser(u);
-  const handleLogout = ()  => { setUser(null); setScreen('login'); };
+  const handleLogin = (u) => {
+  localStorage.setItem('aguadoc_user', JSON.stringify(u));
+  setUser(u);
+};
+const handleLogout = () => {
+  localStorage.removeItem('aguadoc_user');
+  setUser(null);
+  setScreen('login');
+};
 
   // Not logged in
   if (!user) {
