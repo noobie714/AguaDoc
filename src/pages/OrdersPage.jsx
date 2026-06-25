@@ -3,12 +3,13 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/ui/Modal';
 import { showToast } from '../components/ui/Toast';
+import { apiUpdateOrder, apiAddOrder } from '../api';
 
-const PRICE = 50;
+const PRICE = 40;
 
 export default function OrdersPage() {
   const { state, dispatch } = useApp();
-  const [filter, setFilter]         = useState('All');
+  const [filter, setFilter]           = useState('All');
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [form, setForm] = useState({
@@ -16,73 +17,108 @@ export default function OrdersPage() {
     date: new Date().toISOString().slice(0, 10),
   });
 
-  // ── Filter orders (replaces renderOrders / filterOrders) ──
-  const filtered = state.orders.filter(o => {
-    if (['Pending', 'Delivered', 'Cancelled'].includes(filter)) return o.status === filter;
-    if (['Delivery', 'Walk-in'].includes(filter))               return o.type === filter;
+  // ── Filter ──
+  const filtered = (state.orders || []).filter(o => {
+    if (['Pending', 'Processing', 'Delivered', 'Cancelled'].includes(filter)) return o.status === filter;
+    if (filter === 'Delivery') return o.type === 'Delivery';
+    if (filter === 'Walk-in')  return o.type === 'Walk-in / Pickup';
     return true;
   });
 
-  // ── Mark order as delivered (replaces markDone) ──
-  function handleMarkDone(id) {
-    dispatch({ type: 'UPDATE_ORDER_STATUS', id, status: 'Delivered' });
-    showToast(`✅ Order #${String(id).padStart(2, '0')} delivered!`);
+  // ── Resolve customer name ──
+  // Orders from customers use userId; orders from admin use custId
+  function getCustomerName(o) {
+    const id = o.userId || o.custId;
+    if (!id) return '—';
+
+    // Try matching against users (customers who registered)
+    const user = (state.customers || []).find(
+      c => String(c.id) === String(id)
+    );
+    if (user) return user.fullName || user.username || user.name || '—';
+
+    return '—';
   }
 
-  // ── Delete order (replaces delOrder) ──
-  function handleDeleteOrder(id) {
+  // ── Mark as Processing ──
+  async function handleMarkProcessing(o) {
+    try {
+      const updated = await apiUpdateOrder(o.id, { ...o, status: 'Processing' });
+      dispatch({ type: 'UPDATE_ORDER', payload: updated });
+      showToast(`⚙️ Order ${o.ref || o.id} is now Processing!`);
+    } catch {
+      showToast('❌ Failed to update order.');
+    }
+  }
+
+  // ── Mark as Done (Delivered / Ready to Go) ──
+  async function handleMarkDone(o) {
+    const isWalkin  = o.type === 'Walk-in / Pickup';
+    const newStatus = isWalkin ? 'Ready to Go' : 'Delivered';
+    try {
+      const updated = await apiUpdateOrder(o.id, { ...o, status: newStatus });
+      dispatch({ type: 'UPDATE_ORDER', payload: updated });
+      showToast(`✅ Order ${o.ref || o.id} marked as ${newStatus}!`);
+    } catch {
+      showToast('❌ Failed to update order.');
+    }
+  }
+
+  // ── Delete order ──
+  async function handleDeleteOrder(o) {
     if (!confirm('Delete this order?')) return;
-    dispatch({ type: 'DELETE_ORDER', id });
-    showToast('🗑 Order deleted.');
+    try {
+      await apiUpdateOrder(o.id, { ...o, status: 'Cancelled' });
+      dispatch({ type: 'UPDATE_ORDER', payload: { ...o, status: 'Cancelled' } });
+      showToast('🗑 Order deleted.');
+    } catch {
+      showToast('❌ Failed to delete order.');
+    }
   }
 
-  // ── Place new order (replaces placeOrder) ──
-  function handlePlaceOrder() {
+  // ── Place new order (admin side) ──
+  async function handlePlaceOrder() {
     if (!form.custId) { showToast('⚠ Select a customer.'); return; }
-    const amount = form.gallons * PRICE;
-    const customer = state.customers.find(c => c.id === parseInt(form.custId));
-    dispatch({
-      type: 'ADD_ORDER',
-      payload: {
-        id: state.oid,
-        custId: parseInt(form.custId),
-        type: form.type,
-        gallons: parseInt(form.gallons),
+    const amount   = parseInt(form.gallons) * PRICE;
+    const customer = (state.customers || []).find(c => String(c.id) === String(form.custId));
+    try {
+      const newOrder = await apiAddOrder({
+        custId:   form.custId,
+        userId:   form.custId,
+        type:     form.type === 'Walk-in' ? 'Walk-in / Pickup' : 'Delivery',
+        quantity: parseInt(form.gallons),
+        gallons:  parseInt(form.gallons),
+        total:    amount,
         amount,
-        date: form.date,
-        status: 'Pending',
-      },
-    });
-    dispatch({
-      type: 'ADD_NOTIFICATION',
-      payload: {
-        id: state.nid,
-        msg: `New ${form.type} order placed for ${customer?.name} (${form.gallons} gallons).`,
-        type: 'System',
-        time: new Date().toLocaleDateString('en-PH'),
-        read: false,
-      },
-    });
-    showToast(`✅ Order placed for ${customer?.name}!`);
-    setShowOrderModal(false);
-    setForm({ custId: '', type: 'Delivery', gallons: 1, date: new Date().toISOString().slice(0, 10) });
+        date:     form.date,
+        status:   'Pending',
+      });
+      dispatch({ type: 'ADD_ORDER', payload: newOrder });
+      showToast(`✅ Order placed for ${customer?.fullName || customer?.username || customer?.name || 'customer'}!`);
+      setShowOrderModal(false);
+      setForm({ custId: '', type: 'Delivery', gallons: 1, date: new Date().toISOString().slice(0, 10) });
+    } catch {
+      showToast('❌ Failed to place order.');
+    }
   }
 
-  // ── Pending deliveries for route modal ──
-  const pendingDeliveries = state.orders.filter(o => o.status === 'Pending' && o.type === 'Delivery');
+  const pendingDeliveries = (state.orders || []).filter(o => o.status === 'Pending' && o.type === 'Delivery');
 
-  // ── Badge helpers ──
   const statusBadge = {
-    Delivered: 'bg-green-100 text-green-800',
-    Cancelled:  'bg-red-100 text-red-800',
-    Pending:    'bg-yellow-100 text-yellow-800',
-  };
-  const typeBadge = {
-    Delivery: 'bg-blue-100 text-blue-800',
-    'Walk-in': 'bg-green-50 text-green-700',
+    'Delivered':   'bg-green-100 text-green-800',
+    'Ready to Go': 'bg-green-100 text-green-700',
+    'Processing':  'bg-blue-100 text-blue-800',
+    'Cancelled':   'bg-red-100 text-red-800',
+    'Pending':     'bg-yellow-100 text-yellow-800',
   };
 
-  const tabs = ['All', 'Pending', 'Delivered', 'Cancelled', 'Delivery', 'Walk-in'];
+  const typeBadge = {
+    'Delivery':        'bg-blue-100 text-blue-800',
+    'Walk-in / Pickup':'bg-green-50 text-green-700',
+    'Walk-in':         'bg-green-50 text-green-700',
+  };
+
+  const tabs = ['All', 'Pending', 'Processing', 'Delivered', 'Cancelled', 'Delivery', 'Walk-in'];
 
   return (
     <div>
@@ -141,48 +177,57 @@ export default function OrdersPage() {
             {filtered.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-6 text-gray-400 text-xs">No orders found.</td></tr>
             ) : (
-              filtered.map(o => {
-                const customer = state.customers.find(c => c.id === o.custId);
-                return (
-                  <tr key={o.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
-                    <td className="px-2.5 py-2.5 font-mono font-semibold text-gray-600">
-                      #{String(o.id).padStart(2, '0')}
-                    </td>
-                    <td className="px-2.5 py-2.5 font-medium">{customer?.name ?? '?'}</td>
-                    <td className="px-2.5 py-2.5">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${typeBadge[o.type]}`}>
-                        {o.type}
-                      </span>
-                    </td>
-                    <td className="px-2.5 py-2.5 text-gray-600">{o.gallons}</td>
-                    <td className="px-2.5 py-2.5 font-semibold">₱{o.amount}</td>
-                    <td className="px-2.5 py-2.5 text-gray-500">{o.date}</td>
-                    <td className="px-2.5 py-2.5">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${statusBadge[o.status]}`}>
-                        {o.status}
-                      </span>
-                    </td>
-                    <td className="px-2.5 py-2.5">
-                      <div className="flex gap-1">
-                        {o.status === 'Pending' && (
-                          <button
-                            onClick={() => handleMarkDone(o.id)}
-                            className="bg-green-600 text-white text-[11px] font-semibold px-2 py-1 rounded cursor-pointer hover:bg-green-700"
-                          >
-                            ✔ Done
-                          </button>
-                        )}
+              filtered.map(o => (
+                <tr key={o.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
+                  <td className="px-2.5 py-2.5 font-mono font-semibold text-gray-600">
+                    {o.ref || `#${String(o.id).slice(-6)}`}
+                  </td>
+                  <td className="px-2.5 py-2.5 font-medium">{getCustomerName(o)}</td>
+                  <td className="px-2.5 py-2.5">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${typeBadge[o.type] || 'bg-gray-100 text-gray-500'}`}>
+                      {o.type}
+                    </span>
+                  </td>
+                  <td className="px-2.5 py-2.5 text-gray-600">{o.quantity ?? o.gallons ?? '—'}</td>
+                  <td className="px-2.5 py-2.5 font-semibold">₱{o.total ?? o.amount ?? '—'}</td>
+                  <td className="px-2.5 py-2.5 text-gray-500">
+                    {o.date ? new Date(o.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                  </td>
+                  <td className="px-2.5 py-2.5">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${statusBadge[o.status] || 'bg-gray-100 text-gray-500'}`}>
+                      {o.status}
+                    </span>
+                  </td>
+                  <td className="px-2.5 py-2.5">
+                    <div className="flex gap-1">
+                      {o.status === 'Pending' && (
                         <button
-                          onClick={() => handleDeleteOrder(o.id)}
+                          onClick={() => handleMarkProcessing(o)}
+                          className="bg-blue-500 text-white text-[11px] font-semibold px-2 py-1 rounded cursor-pointer hover:bg-blue-600"
+                        >
+                          ⚙ Process
+                        </button>
+                      )}
+                      {o.status === 'Processing' && (
+                        <button
+                          onClick={() => handleMarkDone(o)}
+                          className="bg-green-600 text-white text-[11px] font-semibold px-2 py-1 rounded cursor-pointer hover:bg-green-700"
+                        >
+                          ✔ Done
+                        </button>
+                      )}
+                      {!['Delivered', 'Ready to Go', 'Cancelled'].includes(o.status) && (
+                        <button
+                          onClick={() => handleDeleteOrder(o)}
                           className="border border-gray-200 rounded w-7 h-7 flex items-center justify-center text-[13px] hover:bg-gray-50 cursor-pointer"
                         >
                           🗑
                         </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -199,8 +244,10 @@ export default function OrdersPage() {
               onChange={e => setForm({ ...form, custId: e.target.value })}
             >
               <option value="">-- Select Customer --</option>
-              {state.customers.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+              {(state.customers || []).map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.fullName || c.username || c.name}
+                </option>
               ))}
             </select>
           </div>
@@ -259,24 +306,19 @@ export default function OrdersPage() {
           {pendingDeliveries.length === 0 ? (
             <div className="text-center text-gray-400 text-xs py-4">No pending deliveries today.</div>
           ) : (
-            pendingDeliveries.map((o, i) => {
-              const customer = state.customers.find(c => c.id === o.custId);
-              return (
-                <div key={o.id} className="flex items-center gap-2.5 bg-gray-50 rounded-lg px-3 py-2.5 mb-2">
-                  <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0">
-                    {i + 1}
-                  </div>
-                  <div>
-                    <div className="text-[13.5px] font-semibold">{customer?.name ?? '?'} ({o.gallons} gal)</div>
-                    <div className="text-xs text-gray-500">📍 {customer?.addr ?? 'N/A'}</div>
-                  </div>
+            pendingDeliveries.map((o, i) => (
+              <div key={o.id} className="flex items-center gap-2.5 bg-gray-50 rounded-lg px-3 py-2.5 mb-2">
+                <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0">
+                  {i + 1}
                 </div>
-              );
-            })
+                <div>
+                  <div className="text-[13.5px] font-semibold">{getCustomerName(o)} ({o.quantity ?? o.gallons} gal)</div>
+                  <div className="text-xs text-gray-500">📍 {o.address || 'N/A'}</div>
+                </div>
+              </div>
+            ))
           )}
           <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2.5 text-[13px] mt-3">
-            <strong>Total Distance:</strong> 8.4 km &nbsp;|&nbsp;
-            <strong>Est. Time:</strong> 45 mins &nbsp;|&nbsp;
             <strong>Stops:</strong> {pendingDeliveries.length}
           </div>
           <div className="flex gap-2 justify-end mt-4">
