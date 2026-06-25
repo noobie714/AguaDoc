@@ -67,6 +67,14 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Get all registered users (customers)
+app.get('/api/users', async (req, res) => {
+  const [rows] = await pool.query(
+    'SELECT id, fullName, username, email, phone, address, role FROM users ORDER BY createdAt DESC'
+  );
+  res.json(rows);
+});
+
 // ── CUSTOMERS ──
 app.get('/api/customers', async (req, res) => {
   const [rows] = await pool.query('SELECT * FROM customers ORDER BY createdAt DESC');
@@ -109,12 +117,12 @@ app.get('/api/orders', async (req, res) => {
 });
 
 app.post('/api/orders', async (req, res) => {
-  const { userId, type, quantity, status } = req.body;
+  const { userId, type, quantity, status, total, address, payMethod, priority, notes } = req.body;
   const newId  = id();
   const newRef = 'ORD-' + newId.slice(-6);
   await pool.query(
-    'INSERT INTO orders (id, ref, userId, type, quantity, status) VALUES (?,?,?,?,?,?)',
-    [newId, newRef, userId, type, quantity || 1, status || 'Pending']
+    'INSERT INTO orders (id, ref, userId, type, quantity, status, total, address, payMethod, priority, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    [newId, newRef, userId, type, quantity || 1, status || 'Pending', total || 0, address || '', payMethod || '', priority || 'normal', notes || '']
   );
   const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [newId]);
   res.json(rows[0]);
