@@ -26,7 +26,7 @@ function reducer(state, action) {
     case 'ADD_ORDER':
       return { ...state, orders: [...state.orders, action.payload] };
     case 'UPDATE_ORDER':
-      return { ...state, orders: state.orders.map(o => o.id === action.payload.id ? action.payload : o) };
+  return { ...state, orders: state.orders.map(o => o.id === action.payload.id ? action.payload : o) };
     case 'SET_PAYMENTS':
       return { ...state, payments: action.payload };
     case 'ADD_PAYMENT':
