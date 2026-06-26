@@ -11,7 +11,7 @@ export default function ReportsPage() {
   const canvasRef = useRef(null);
 
   // ── Summary totals (replaces renderReports calculations) ──
-  const grossTotal  = state.orders.reduce((sum, o) => sum + o.amount, 0);
+  const grossTotal  = state.orders.reduce((sum, o) => sum + (o.total ?? o.amount ?? 0), 0);
   const collected   = state.payments.reduce((sum, p) => sum + p.amount, 0);
   const outstanding = state.customers.reduce((sum, c) => sum + c.balance, 0);
 
@@ -48,15 +48,20 @@ export default function ReportsPage() {
   function handleExportCSV() {
     const rows = [['Customer', 'Order ID', 'Gallons', 'Amount', 'Payment', 'Date', 'Status']];
     state.orders.forEach(o => {
-      const c   = state.customers.find(x => x.id === o.custId);
-      const pay = state.payments.find(p => p.custId === o.custId && p.orderId === o.id);
+      const id  = o.userId || o.custId;
+      const c   =
+        (state.users     || []).find(u => String(u.id) === String(id)) ||
+        (state.customers || []).find(x => String(x.id) === String(id));
+      const pay = state.payments.find(p =>
+        (String(p.custId) === String(id) || String(p.userId) === String(id)) && p.orderId === o.id
+      );
       rows.push([
-        c?.name ?? '?',
+        c?.name ?? c?.fullName ?? '—',
         '#' + o.id,
-        o.gallons,
-        '₱' + o.amount,
+        o.quantity ?? o.gallons ?? '—',
+        '₱' + (o.total ?? o.amount ?? 0),
         pay ? pay.method : 'Unpaid',
-        o.date,
+        o.date || o.createdAt || '—',
         o.status,
       ]);
     });
@@ -157,21 +162,29 @@ export default function ReportsPage() {
           </thead>
           <tbody>
             {state.orders.map(o => {
-              const customer = state.customers.find(x => x.id === o.custId);
-              const pay      = state.payments.find(p => p.custId === o.custId && p.orderId === o.id);
+              const id  = o.userId || o.custId;
+              const customer =
+                (state.users     || []).find(u => String(u.id) === String(id)) ||
+                (state.customers || []).find(x => String(x.id) === String(id));
+              const pay = state.payments.find(p =>
+                (String(p.custId) === String(id) || String(p.userId) === String(id)) && p.orderId === o.id
+              );
+              const displayDate = o.date || o.createdAt
+                ? new Date(o.date || o.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+                : '—';
               return (
                 <tr key={o.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
-                  <td className="px-2.5 py-2.5 font-medium">{customer?.name ?? '?'}</td>
+                  <td className="px-2.5 py-2.5 font-medium">{customer?.name ?? customer?.fullName ?? '—'}</td>
                   <td className="px-2.5 py-2.5 font-mono text-gray-600">#{String(o.id).padStart(2, '0')}</td>
-                  <td className="px-2.5 py-2.5 text-gray-500">{o.gallons}</td>
-                  <td className="px-2.5 py-2.5 font-semibold">₱{o.amount}</td>
+                  <td className="px-2.5 py-2.5 text-gray-500">{o.quantity ?? o.gallons ?? '—'}</td>
+                  <td className="px-2.5 py-2.5 font-semibold">₱{o.total ?? o.amount ?? '—'}</td>
                   <td className="px-2.5 py-2.5">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold
                       ${pay ? (methodBadge[pay.method] ?? 'bg-gray-100 text-gray-600') : 'bg-yellow-100 text-yellow-800'}`}>
                       {pay ? pay.method : 'Unpaid'}
                     </span>
                   </td>
-                  <td className="px-2.5 py-2.5 text-gray-500">{o.date}</td>
+                  <td className="px-2.5 py-2.5 text-gray-500">{displayDate}</td>
                   <td className="px-2.5 py-2.5">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold
                       ${o.status === 'Delivered' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
