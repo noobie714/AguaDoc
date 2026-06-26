@@ -15,7 +15,7 @@ export default function DashboardPage() {
   // ── Computed values (replaces renderDashboard() calculations) ──
   const totalSales    = state.orders
     .filter(o => o.status === 'Delivered')
-    .reduce((sum, o) => sum + o.amount, 0);
+    .reduce((sum, o) => sum + (o.total ?? o.amount ?? 0), 0);
 
   const totalDebt     = state.customers
     .reduce((sum, c) => sum + c.balance, 0);
@@ -245,14 +245,18 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {recentOrders.map(o => {
-                const customer = state.customers.find(c => c.id === o.custId);
+                // Orders from the customer portal use userId; admin-created orders use custId
+                const id = o.userId || o.custId;
+                const customer =
+                  (state.users     || []).find(u => String(u.id) === String(id)) ||
+                  (state.customers || []).find(c => String(c.id) === String(id));
                 return (
                   <tr key={o.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
                     <td className="px-2.5 py-2.5 font-medium">
-                      {customer ? customer.name : '?'}
+                      {customer ? (customer.name || customer.fullName) : '—'}
                     </td>
-                    <td className="px-2.5 py-2.5 text-gray-500">{o.gallons}</td>
-                    <td className="px-2.5 py-2.5 font-semibold">₱{o.amount}</td>
+                    <td className="px-2.5 py-2.5 text-gray-500">{o.quantity ?? o.gallons ?? '—'}</td>
+                    <td className="px-2.5 py-2.5 font-semibold">₱{o.total ?? o.amount ?? '—'}</td>
                     <td className="px-2.5 py-2.5">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11.5px] font-semibold
                         ${o.status === 'Delivered'
