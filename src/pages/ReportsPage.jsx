@@ -11,9 +11,9 @@ export default function ReportsPage() {
   const canvasRef = useRef(null);
 
   // ── Summary totals (replaces renderReports calculations) ──
-  const grossTotal  = state.orders.reduce((sum, o) => sum + (o.total ?? o.amount ?? 0), 0);
-  const collected   = state.payments.reduce((sum, p) => sum + p.amount, 0);
-  const outstanding = state.customers.reduce((sum, c) => sum + c.balance, 0);
+  const grossTotal  = state.orders.reduce((sum, o) => sum + (parseFloat(o.total ?? o.amount) || 0), 0);
+  const collected   = state.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  const outstanding = state.customers.reduce((sum, c) => sum + (parseFloat(c.balance) || 0), 0);
 
   // ── Revenue chart (replaces renderReports chart) ──
   useEffect(() => {
@@ -110,15 +110,15 @@ export default function ReportsPage() {
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-green-600 rounded-xl p-3.5 text-white">
             <div className="text-xs opacity-85">Gross Total Sales</div>
-            <div className="text-[22px] font-black mt-1">₱{grossTotal}</div>
+            <div className="text-[22px] font-black mt-1">₱{Math.round(grossTotal).toLocaleString()}</div>
           </div>
           <div className="bg-blue-600 rounded-xl p-3.5 text-white">
             <div className="text-xs opacity-85">Actual Collections</div>
-            <div className="text-[22px] font-black mt-1">₱{collected}</div>
+            <div className="text-[22px] font-black mt-1">₱{Math.round(collected).toLocaleString()}</div>
           </div>
           <div className="bg-red-500 rounded-xl p-3.5 text-white">
             <div className="text-xs opacity-85">Outstanding Debts</div>
-            <div className="text-[22px] font-black mt-1">₱{outstanding}</div>
+            <div className="text-[22px] font-black mt-1">₱{Math.round(outstanding).toLocaleString()}</div>
           </div>
         </div>
 

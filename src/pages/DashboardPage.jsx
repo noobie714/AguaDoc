@@ -15,7 +15,7 @@ export default function DashboardPage() {
   // ── Computed values (replaces renderDashboard() calculations) ──
   const totalSales    = state.orders
     .filter(o => o.status === 'Delivered')
-    .reduce((sum, o) => sum + (o.total ?? o.amount ?? 0), 0);
+    .reduce((sum, o) => sum + (parseFloat(o.total ?? o.amount) || 0), 0);
 
   const totalDebt     = state.customers
     .reduce((sum, c) => sum + c.balance, 0);

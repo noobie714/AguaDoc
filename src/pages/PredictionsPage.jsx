@@ -10,7 +10,7 @@ export default function PredictionsPage() {
   const chartRef   = useRef(null);
 
   // Predictions (replaces renderPredictions())
-  const sales    = state.orders.filter(o => o.status === 'Delivered').reduce((s,o) => s + (o.total ?? o.amount ?? 0), 0);
+  const sales    = state.orders.filter(o => o.status === 'Delivered').reduce((s,o) => s + (parseFloat(o.total ?? o.amount) || 0), 0);
   const avg      = Math.round(sales / 7);
   const predToday = avg;
   const predWeek  = avg * 7;
