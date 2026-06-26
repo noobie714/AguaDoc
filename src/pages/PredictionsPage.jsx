@@ -10,7 +10,7 @@ export default function PredictionsPage() {
   const chartRef   = useRef(null);
 
   // Predictions (replaces renderPredictions())
-  const sales    = state.orders.filter(o => o.status === 'Delivered').reduce((s,o) => s + o.amount, 0);
+  const sales    = state.orders.filter(o => o.status === 'Delivered').reduce((s,o) => s + (o.total ?? o.amount ?? 0), 0);
   const avg      = Math.round(sales / 7);
   const predToday = avg;
   const predWeek  = avg * 7;
@@ -147,15 +147,21 @@ export default function PredictionsPage() {
           {deliveries.length === 0 ? (
             <div className="text-center text-gray-400 text-xs py-6">No pending deliveries today.</div>
           ) : deliveries.map((o, i) => {
-            const customer = state.customers.find(c => c.id === o.custId);
+            const id = o.userId || o.custId;
+            const customer =
+              (state.users     || []).find(u => String(u.id) === String(id)) ||
+              (state.customers || []).find(c => String(c.id) === String(id));
+            const name    = customer?.name || customer?.fullName || '—';
+            const address = customer?.addr || customer?.address || 'N/A';
+            const gallons = o.quantity ?? o.gallons ?? '—';
             return (
               <div key={o.id} className="flex items-center gap-2.5 px-3 py-2 bg-gray-50 rounded-lg mb-2">
                 <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0">
                   {i + 1}
                 </div>
                 <div>
-                  <div className="text-[13.5px] font-semibold">{customer?.name ?? '?'} ({o.gallons} gal)</div>
-                  <div className="text-xs text-gray-500">📍 {customer?.addr ?? 'N/A'}</div>
+                  <div className="text-[13.5px] font-semibold">{name} ({gallons} gal)</div>
+                  <div className="text-xs text-gray-500">📍 {address}</div>
                 </div>
               </div>
             );
