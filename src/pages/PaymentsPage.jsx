@@ -9,10 +9,10 @@ export default function PaymentsPage() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ custId: '', method: 'Cash', amount: '' });
 
-  // ── Summary calculations (replaces renderPayments) ──
-  const totalCollected = state.payments.reduce((sum, p) => sum + p.amount, 0);
-  const totalDebt      = state.customers.reduce((sum, c) => sum + c.balance, 0);
-  const debtorCount    = state.customers.filter(c => c.balance > 0).length;
+  // ── Summary calculations ──
+const totalCollected = state.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+const totalDebt      = state.customers.reduce((sum, c) => sum + (parseFloat(c.balance) || 0), 0);
+const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).length;
 
   // ── Unpaid customers sorted by balance ──
   const unpaidCustomers = [...state.customers]
@@ -28,7 +28,7 @@ export default function PaymentsPage() {
       showToast('⚠ Select a customer and enter a valid amount.');
       return;
     }
-    const customer = state.customers.find(c => c.id === parseInt(form.custId));
+   const customer = state.customers.find(c => String(c.id) === String(form.custId));
     dispatch({
       type: 'ADD_PAYMENT',
       payload: {
@@ -86,7 +86,7 @@ export default function PaymentsPage() {
             <span className="text-3xl">💰</span>
             <div>
               <div className="text-xs text-green-700 font-semibold">Total Collected</div>
-              <div className="text-[22px] font-black text-green-800">₱{totalCollected}</div>
+              <div className="text-[22px] font-black text-green-800">₱{totalCollected.toFixed(2)}</div>
               <div className="text-xs text-green-700">{state.payments.length} transactions</div>
             </div>
           </div>
@@ -94,7 +94,7 @@ export default function PaymentsPage() {
             <span className="text-3xl">🛡</span>
             <div>
               <div className="text-xs text-red-700 font-semibold">Total Outstanding Debt</div>
-              <div className="text-[22px] font-black text-red-800">₱{totalDebt}</div>
+              <div className="text-[22px] font-black text-red-800">₱{totalDebt.toFixed(2)}</div>
               <div className="text-xs text-red-700">{debtorCount} customers with debt</div>
             </div>
           </div>
@@ -142,28 +142,31 @@ export default function PaymentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {paymentHistory.map(p => {
-                  const customer = state.customers.find(c => c.id === p.custId);
-                  return (
-                    <tr key={p.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
-                      <td className="px-2 py-2.5 font-medium">{customer?.name ?? '?'}</td>
-                      <td className="px-2 py-2.5">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${methodBadge[p.method]}`}>
-                          {p.method}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2.5 font-bold text-green-600">+₱{p.amount}</td>
-                      <td className="px-2 py-2.5 text-gray-500">{p.date}</td>
-                      <td className="px-2 py-2.5">
-                        <button
-                          onClick={() => showToast(`🧾 Receipt: ₱${p.amount} - ${p.method}`)}
-                          className="border border-gray-200 rounded w-7 h-7 flex items-center justify-center text-[13px] hover:bg-gray-50 cursor-pointer"
-                        >
-                          🧾
-                        </button>
-                      </td>
-                    </tr>
-                  );
+            {paymentHistory.map(p => {
+               const customer =
+               (state.customers || []).find(c => String(c.id) === String(p.custId)) ||
+               (state.users     || []).find(u => String(u.id) === String(p.custId));
+               const custName = customer?.name ?? customer?.fullName ?? '?';
+            return (
+               <tr key={p.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
+                <td className="px-2 py-2.5 font-medium">{custName}</td>
+                 <td className="px-2 py-2.5">
+                   <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${methodBadge[p.method]}`}>
+                   {p.method}
+                   </span>
+                 </td>
+                     <td className="px-2 py-2.5 font-bold text-green-600">+₱{parseFloat(p.amount).toFixed(2)}</td>
+                       <td className="px-2 py-2.5 text-gray-500">{p.date}</td>
+                         <td className="px-2 py-2.5">
+                           <button
+                             onClick={() => showToast(`🧾 Receipt: ₱${parseFloat(p.amount).toFixed(2)} - ${p.method}`)}
+                             className="border border-gray-200 rounded w-7 h-7 flex items-center justify-center text-[13px] hover:bg-gray-50 cursor-pointer"
+                               >
+                              🧾
+                            </button>
+                         </td>
+                       </tr>
+                    );
                 })}
               </tbody>
             </table>
