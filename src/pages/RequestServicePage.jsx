@@ -200,8 +200,7 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Priority</p>
                 <div className="flex gap-2">
                   <PriorityBadge value="normal"  label="Normal"  emoji="🕐" selected={priority === 'normal'}  onClick={setPriority} />
-                  <PriorityBadge value="urgent"  label="Urgent"  emoji="⚡" selected={priority === 'urgent'}  onClick={setPriority} />
-                  <PriorityBadge value="priority" label="Priority" emoji="❤️" selected={priority === 'priority'} onClick={setPriority} />
+                  <PriorityBadge value="express" label="Express" emoji="🚀" selected={priority === 'express'} onClick={setPriority} />
                 </div>
               </div>
             )}
