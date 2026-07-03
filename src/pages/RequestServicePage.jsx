@@ -1,6 +1,8 @@
 // src/pages/RequestServicePage.jsx
 import { useState } from 'react';
 import { apiAddOrder } from '../api';
+import gcashQR from '../assets/gcash-qr.png';
+import mayaQR from '../assets/maya-qr.png';
 
 const PRICE_PER_GALLON = 40;
 const DELIVERY_FEE     = 20;
@@ -362,9 +364,11 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
                   <p className="text-xs text-gray-400 mb-3">
                     Scan the QR code below to pay via <span className="font-semibold capitalize">{payMethod}</span>
                   </p>
-                  <div className="w-28 h-28 mx-auto bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center text-gray-300 text-xs mb-3">
-                    QR Code
-                  </div>
+                  <img
+                    src={payMethod === 'gcash' ? gcashQR : mayaQR}
+                    alt={`${payMethod === 'gcash' ? 'GCash' : 'Maya'} QR code`}
+                    className="w-28 h-28 mx-auto rounded-xl border border-gray-200 mb-3 object-contain bg-white"
+                  />
                   <p className="text-xs text-gray-400 mb-2">After paying, enter your reference number:</p>
                   <input
                     value={refNumber}
