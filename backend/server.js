@@ -145,11 +145,11 @@ app.get('/api/payments', async (req, res) => {
 });
 
 app.post('/api/payments', async (req, res) => {
-  const { custId, amount, method } = req.body;
+  const { custId, orderId, amount, method } = req.body;
   const newId = id();
   await pool.query(
-    'INSERT INTO payments (id, custId, amount, method) VALUES (?,?,?,?)',
-    [newId, custId, amount, method]
+    'INSERT INTO payments (id, custId, orderId, amount, method) VALUES (?,?,?,?,?)',
+    [newId, custId, orderId, amount, method]
   );
   const [rows] = await pool.query('SELECT * FROM payments WHERE id = ?', [newId]);
   res.json(rows[0]);

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { apiAddOrder } from '../api';
 import gcashQR from '../assets/gcash-qr.png';
 import mayaQR from '../assets/maya-qr.png';
+import { apiAddOrder, apiAddPayment } from '../api';
 
 const PRICE_PER_GALLON = 40;
 const DELIVERY_FEE     = 20;
@@ -99,32 +100,42 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
 
   // ── Submit ──
   async function handleConfirm() {
-    if (isDelivery && !payMethod) { setError('Please select a payment method.'); return; }
-    if ((payMethod === 'gcash' || payMethod === 'maya') && !refNumber.trim()) {
-      setError('Please enter your reference number.'); return;
-    }
-    setLoading(true);
-    try {
-      await apiAddOrder({
-        userId:      user.id,
-        type:        isWalkin ? 'Walk-in / Pickup' : 'Delivery',
-        priority,
-        quantity,
-        address:     isDelivery ? address : 'Walk-in',
-        notes,
-        payMethod:   isWalkin ? 'Pay on arrival' : payMethod,
-        refNumber:   isWalkin ? '' : refNumber,
-        total,
-        status:      'Pending',
-      });
-      setSuccess(true);
-      onOrderPlaced?.();
-    } catch {
-      setError('Failed to place order. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+  if (isDelivery && !payMethod) { setError('Please select a payment method.'); return; }
+  if ((payMethod === 'gcash' || payMethod === 'maya') && !refNumber.trim()) {
+    setError('Please enter your reference number.'); return;
   }
+  setLoading(true);
+  try {
+    const order = await apiAddOrder({
+      userId:      user.id,
+      type:        isWalkin ? 'Walk-in / Pickup' : 'Delivery',
+      priority,
+      quantity,
+      address:     isDelivery ? address : 'Walk-in',
+      notes,
+      payMethod:   isWalkin ? 'Pay on arrival' : payMethod,
+      refNumber:   isWalkin ? '' : refNumber,
+      total,
+      status:      'Pending',
+    });
+
+    if (payMethod === 'gcash' || payMethod === 'maya') {
+      await apiAddPayment({
+        custId:  user.id,
+        orderId: order.id,
+        amount:  total,
+        method:  payMethod === 'gcash' ? 'GCash' : 'Maya',
+      });
+    }
+
+    setSuccess(true);
+    onOrderPlaced?.();
+  } catch {
+    setError('Failed to place order. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+}
 
   // ── Success screen ──
   if (success) {
