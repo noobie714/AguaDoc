@@ -81,6 +81,43 @@ app.get('/api/customers', async (req, res) => {
   res.json(rows);
 });
 
+// Update own profile (and optionally change password)
+app.put('/api/users/:id', async (req, res) => {
+  const { fullName, email, phone, address, currentPassword, newPassword } = req.body;
+
+  const [existingRows] = await pool.query('SELECT * FROM users WHERE id = ?', [req.params.id]);
+  if (existingRows.length === 0) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+  const existing = existingRows[0];
+
+  let passwordToSave = existing.password;
+  if (newPassword) {
+    if (currentPassword !== existing.password) {
+      return res.status(400).json({ success: false, message: 'Current password is incorrect' });
+    }
+    passwordToSave = newPassword;
+  }
+
+  await pool.query(
+    'UPDATE users SET fullName = ?, email = ?, phone = ?, address = ?, password = ? WHERE id = ?',
+    [
+      fullName ?? existing.fullName,
+      email ?? existing.email,
+      phone ?? existing.phone,
+      address ?? existing.address,
+      passwordToSave,
+      req.params.id,
+    ]
+  );
+
+  const [rows] = await pool.query(
+    'SELECT id, fullName, username, email, phone, address, role FROM users WHERE id = ?',
+    [req.params.id]
+  );
+  res.json(rows[0]);
+});
+
 app.post('/api/customers', async (req, res) => {
   const { fullName, email, phone, address, balance } = req.body;
   const newId = id();

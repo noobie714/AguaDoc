@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, ShoppingCart, CreditCard, LogOut, Bell } from 'lucide-react';
-import { apiGetOrders } from '../api';
+import { LayoutDashboard, ShoppingCart, CreditCard, LogOut, Bell, User } from 'lucide-react';
+import { apiGetOrders, apiUpdateUser } from '../api';
 import RequestServicePage from './RequestServicePage';
 
 const NAV = [
@@ -8,6 +8,7 @@ const NAV = [
   { icon: ShoppingCart,    label: 'Request Service', id: 'request'   },
   { icon: ShoppingCart,    label: 'My Order',        id: 'orders'    },
   { icon: CreditCard,      label: 'Billing History', id: 'billing'   },
+  { icon: User,            label: 'Edit Profile',    id: 'profile'   },
 ];
 
 const STATUS_STYLE = {
@@ -17,10 +18,21 @@ const STATUS_STYLE = {
   Delivered: 'bg-gray-100 text-gray-500',
 };
 
-export default function CustomerDashboard({ user, onLogout }) {
+export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
   const [active, setActive]   = useState('dashboard');
   const [orders, setOrders]   = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Edit Profile state
+  const [profileForm, setProfileForm] = useState({
+    fullName: user?.fullName || '',
+    email:    user?.email    || '',
+    phone:    user?.phone    || '',
+    address:  user?.address  || '',
+  });
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [profileMsg, setProfileMsg]   = useState(null); // { type: 'success'|'error', text }
+  const [profileSaving, setProfileSaving] = useState(false);
 
   useEffect(() => {
     apiGetOrders(user.id)
@@ -41,6 +53,44 @@ export default function CustomerDashboard({ user, onLogout }) {
     { emoji: '✅', label: 'READY',           key: 'ready'     },
     { emoji: '🏁', label: 'DELIVERED',       key: 'delivered' },
   ];
+
+  async function handleProfileSave(e) {
+    e.preventDefault();
+    setProfileMsg(null);
+
+    if (pwForm.newPassword && pwForm.newPassword !== pwForm.confirmPassword) {
+      setProfileMsg({ type: 'error', text: 'New password and confirm password do not match.' });
+      return;
+    }
+    if (pwForm.newPassword && !pwForm.currentPassword) {
+      setProfileMsg({ type: 'error', text: 'Please enter your current password to set a new one.' });
+      return;
+    }
+
+    setProfileSaving(true);
+    try {
+      const updated = await apiUpdateUser(user.id, {
+        fullName: profileForm.fullName,
+        email:    profileForm.email,
+        phone:    profileForm.phone,
+        address:  profileForm.address,
+        currentPassword: pwForm.newPassword ? pwForm.currentPassword : undefined,
+        newPassword:     pwForm.newPassword || undefined,
+      });
+
+      if (updated?.success === false) {
+        setProfileMsg({ type: 'error', text: updated.message || 'Failed to update profile.' });
+      } else {
+        onUpdateUser?.({ ...user, ...updated });
+        setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setProfileMsg({ type: 'success', text: 'Profile updated successfully!' });
+      }
+    } catch {
+      setProfileMsg({ type: 'error', text: 'Something went wrong. Please try again.' });
+    } finally {
+      setProfileSaving(false);
+    }
+  }
 
   const initials  = (user?.username || user?.fullName || 'U').slice(0, 1).toUpperCase();
   const firstName = (user?.fullName || user?.username || 'User').split(' ')[0];
@@ -329,6 +379,117 @@ export default function CustomerDashboard({ user, onLogout }) {
             <div className="bg-white rounded-2xl shadow-sm p-5">
               <h3 className="font-semibold text-[#0f172a] mb-4">Billing History</h3>
               <p className="text-gray-400 text-sm text-center py-8">No billing records yet...</p>
+            </div>
+          )}
+
+          {/* ── Edit Profile ── */}
+          {active === 'profile' && (
+            <div className="max-w-xl space-y-5">
+              {/* Profile header card */}
+              <div className="bg-white rounded-2xl shadow-sm p-5 flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-[#0ea5c9] flex items-center justify-center text-white font-bold text-xl shrink-0">
+                  {initials}
+                </div>
+                <div>
+                  <p className="font-semibold text-[#0f172a]">{user?.fullName || user?.username}</p>
+                  <p className="text-gray-400 text-sm">@{user?.username}</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleProfileSave} className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
+                <h3 className="font-semibold text-[#0f172a]">Profile Information</h3>
+
+                {profileMsg && (
+                  <div className={`text-sm rounded-lg px-3 py-2 ${
+                    profileMsg.type === 'success'
+                      ? 'bg-green-50 text-green-700 border border-green-200'
+                      : 'bg-red-50 text-red-600 border border-red-200'
+                  }`}>
+                    {profileMsg.text}
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500">Full Name</label>
+                  <input
+                    value={profileForm.fullName}
+                    onChange={e => setProfileForm(f => ({ ...f, fullName: e.target.value }))}
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0ea5c9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500">Email</label>
+                  <input
+                    type="email"
+                    value={profileForm.email}
+                    onChange={e => setProfileForm(f => ({ ...f, email: e.target.value }))}
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0ea5c9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500">Phone</label>
+                  <input
+                    value={profileForm.phone}
+                    onChange={e => setProfileForm(f => ({ ...f, phone: e.target.value }))}
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0ea5c9]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500">Address</label>
+                  <input
+                    value={profileForm.address}
+                    onChange={e => setProfileForm(f => ({ ...f, address: e.target.value }))}
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0ea5c9]"
+                  />
+                </div>
+
+                <hr className="border-gray-100" />
+
+                <h3 className="font-semibold text-[#0f172a]">Change Password</h3>
+                <p className="text-xs text-gray-400 -mt-2">Leave blank if you don't want to change your password.</p>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-500">Current Password</label>
+                  <input
+                    type="password"
+                    value={pwForm.currentPassword}
+                    onChange={e => setPwForm(f => ({ ...f, currentPassword: e.target.value }))}
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0ea5c9]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">New Password</label>
+                    <input
+                      type="password"
+                      value={pwForm.newPassword}
+                      onChange={e => setPwForm(f => ({ ...f, newPassword: e.target.value }))}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0ea5c9]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={pwForm.confirmPassword}
+                      onChange={e => setPwForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0ea5c9]"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="bg-[#0ea5c9] hover:bg-[#0284a8] disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+                >
+                  {profileSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </form>
             </div>
           )}
         </main>

@@ -107,3 +107,10 @@ export async function apiGetUsers() {
   const res = await fetch(`/api/users`);
   return res.json();
 }
+export async function apiUpdateUser(id, data) {
+  const res = await fetch(`/api/users/${id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}

@@ -54,7 +54,7 @@ const handleLogout = () => {
 
   // Customer role → customer dashboard
   if (user.role === 'customer') {
-    return <CustomerDashboard user={user} onLogout={handleLogout} />;
+    return <CustomerDashboard user={user} onLogout={handleLogout} onUpdateUser={handleLogin} />;
   }
 
   // Admin/Staff role → admin panel
