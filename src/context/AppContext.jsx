@@ -45,23 +45,29 @@ function reducer(state, action) {
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  useEffect(() => {
-  Promise.all([
-    apiGetCustomers(),
-    apiGetOrders(),
-    apiGetPayments(),
-    apiGetInventory(),
-    apiGetContainers(),
-    apiGetUsers()
-  ]).then(([customers, orders, payments, inventory, containers, users]) => {
-    dispatch({
-      type: 'SET_ALL',
-      payload: { customers, orders, payments, inventory, containers, users }
+useEffect(() => {
+  const fetchAll = () => {
+    Promise.all([
+      apiGetCustomers(),
+      apiGetOrders(),
+      apiGetPayments(),
+      apiGetInventory(),
+      apiGetContainers(),
+      apiGetUsers()
+    ]).then(([customers, orders, payments, inventory, containers, users]) => {
+      dispatch({
+        type: 'SET_ALL',
+        payload: { customers, orders, payments, inventory, containers, users }
+      });
+    }).catch(() => {
+      console.warn('Backend offline, using empty state.');
+      dispatch({ type: 'SET_ALL', payload: { loading: false } });
     });
-  }).catch(() => {
-    console.warn('Backend offline, using empty state.');
-    dispatch({ type: 'SET_ALL', payload: { loading: false } });
-  });
+  };
+
+  fetchAll();                                    // initial load
+  const interval = setInterval(fetchAll, 8000);  // re-sync every 8s (picks up new customer orders)
+  return () => clearInterval(interval);
 }, []);
 
   return (
