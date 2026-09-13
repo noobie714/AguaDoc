@@ -114,3 +114,7 @@ export async function apiUpdateUser(id, data) {
   });
   return res.json();
 }
+export async function apiGetDeliveryRoute() {
+  const res = await fetch(`${BASE}/delivery-route`);
+  return res.json();
+}

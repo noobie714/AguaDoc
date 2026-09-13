@@ -5,6 +5,7 @@ const navItems = [
   { path: '/dashboard',     icon: '🏠', label: 'Dashboard' },
   { path: '/customers',     icon: '👥', label: 'Customers & Debt' },
   { path: '/orders',        icon: '📋', label: 'Order Management' },
+  { path: '/delivery-route', icon: '🗺️', label: 'Delivery Route' },
   { path: '/payments',      icon: '💳', label: 'Payment & Billing' },
   { path: '/inventory',     icon: '🪣', label: 'Inventory Monitor' },
   { path: '/reports',       icon: '📊', label: 'Reports & Analytics' },

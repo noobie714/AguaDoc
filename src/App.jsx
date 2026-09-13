@@ -14,6 +14,7 @@ import InventoryPage from './pages/InventoryPage';
 import ReportsPage from './pages/ReportsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import PredictionsPage from './pages/PredictionsPage';
+import DeliveryRoutePage from './pages/DeliveryRoutePage';
 
 function App() {
   const [user, setUser]     = useState(() => {
@@ -67,6 +68,7 @@ const handleLogout = () => {
             <Route path="/dashboard"     element={<DashboardPage />} />
             <Route path="/customers"     element={<CustomersPage />} />
             <Route path="/orders"        element={<OrdersPage />} />
+            <Route path="/delivery-route" element={<DeliveryRoutePage />} />
             <Route path="/payments"      element={<PaymentsPage />} />
             <Route path="/inventory"     element={<InventoryPage />} />
             <Route path="/reports"       element={<ReportsPage />} />

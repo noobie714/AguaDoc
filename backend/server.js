@@ -26,6 +26,26 @@ pool.getConnection()
 // ── Helper ──
 const id = () => Date.now().toString();
 
+// ── Geocoding (Nominatim / OpenStreetMap — free, no API key needed) ──
+async function geocodeAddress(address) {
+  if (!address) return { lat: null, lng: null };
+  try {
+    const query = encodeURIComponent(`${address}, Lapu-Lapu City, Cebu, Philippines`);
+    const geoRes = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${query}`,
+      { headers: { 'User-Agent': 'AguaDoc-Capstone/1.0 (school project)' } }
+    );
+    const results = await geoRes.json();
+    if (results[0]) return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+  } catch (err) {
+    console.warn('Geocoding failed for address:', address, err.message);
+  }
+  return { lat: null, lng: null };
+}
+
+// Your refill station's coordinates — TODO: replace with AguaDoc's real location in Barangay Pajo.
+const DEPOT = { lat: 10.3157, lng: 123.9740, name: 'AguaDoc Station' };
+
 // ====================== ROUTES ======================
 
 app.get('/api', (req, res) => res.json({ message: '✅ AguaDoc Backend is running!' }));
@@ -157,13 +177,52 @@ app.post('/api/orders', async (req, res) => {
   const { userId, type, quantity, status, total, address, payMethod, priority, notes } = req.body;
   const newId  = id();
   const newRef = 'ORD-' + newId.slice(-6);
+  const { lat, lng } = await geocodeAddress(address);
   await pool.query(
-    'INSERT INTO orders (id, ref, userId, type, quantity, status, total, address, payMethod, priority, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-    [newId, newRef, userId, type, quantity || 1, status || 'Pending', total || 0, address || '', payMethod || '', priority || 'normal', notes || '']
+    'INSERT INTO orders (id, ref, userId, type, quantity, status, total, address, payMethod, priority, notes, lat, lng) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    [newId, newRef, userId, type, quantity || 1, status || 'Pending', total || 0, address || '', payMethod || '', priority || 'normal', notes || '', lat, lng]
   );
   const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [newId]);
   res.json(rows[0]);
 });
+
+// ── DELIVERY ROUTE (optimized stop order via OSRM's free public Trip API) ──
+app.get('/api/delivery-route', async (req, res) => {
+  try {
+    const [orders] = await pool.query(
+      `SELECT * FROM orders
+       WHERE status IN ('Pending','Processing') AND lat IS NOT NULL AND lng IS NOT NULL
+       ORDER BY date ASC`
+    );
+
+    if (orders.length === 0) {
+      return res.json({ depot: DEPOT, stops: [], geometry: [] });
+    }
+
+    const coordString = [DEPOT, ...orders].map(o => `${o.lng},${o.lat}`).join(';');
+
+    const osrmRes = await fetch(
+      `http://router.project-osrm.org/trip/v1/driving/${coordString}` +
+      `?source=first&roundtrip=false&geometries=geojson&overview=full`
+    );
+    const trip = await osrmRes.json();
+
+    if (trip.code !== 'Ok') {
+      return res.status(500).json({ success: false, message: 'Route optimization failed', detail: trip });
+    }
+
+    const stops = trip.waypoints
+      .map((wp, inputIndex) => ({ inputIndex, tripOrder: wp.waypoint_index }))
+      .filter(w => w.inputIndex !== 0)
+      .sort((a, b) => a.tripOrder - b.tripOrder)
+      .map(w => orders[w.inputIndex - 1]);
+
+    res.json({ depot: DEPOT, stops, geometry: trip.trips[0].geometry.coordinates });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 
 app.put('/api/orders/:id', async (req, res) => {
   const { status, type, quantity } = req.body;
