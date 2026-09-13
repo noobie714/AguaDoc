@@ -46,27 +46,33 @@ export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
 useEffect(() => {
+  const KEYS = ['customers', 'orders', 'payments', 'inventory', 'containers', 'users'];
+
   const fetchAll = () => {
-    Promise.all([
+    Promise.allSettled([
       apiGetCustomers(),
       apiGetOrders(),
       apiGetPayments(),
       apiGetInventory(),
       apiGetContainers(),
       apiGetUsers()
-    ]).then(([customers, orders, payments, inventory, containers, users]) => {
-      dispatch({
-        type: 'SET_ALL',
-        payload: { customers, orders, payments, inventory, containers, users }
+    ]).then((results) => {
+      const payload = {};
+      results.forEach((result, i) => {
+        const key = KEYS[i];
+        if (result.status === 'fulfilled') {
+          payload[key] = result.value;
+        } else {
+          // Don't wipe existing data for this slice — just log so we can see which endpoint is failing.
+          console.warn(`Failed to load "${key}":`, result.reason);
+        }
       });
-    }).catch(() => {
-      console.warn('Backend offline, using empty state.');
-      dispatch({ type: 'SET_ALL', payload: { loading: false } });
+      dispatch({ type: 'SET_ALL', payload });
     });
   };
 
   fetchAll();                                    // initial load
-  const interval = setInterval(fetchAll, 8000);  // re-sync every 8s (picks up new customer orders)
+  const interval = setInterval(fetchAll, 8000);  // re-sync every 8s
   return () => clearInterval(interval);
 }, []);
 
