@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/ui/Modal';
 import { showToast } from '../components/ui/Toast';
+import { apiAddPayment, apiUpdateCustomer } from '../api';
 
 export default function PaymentsPage() {
   const { state, dispatch } = useApp();
@@ -22,37 +23,47 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
   // ── Payment history newest first ──
   const paymentHistory = [...state.payments].reverse();
 
-  // ── Record payment (replaces recordPayment) ──
-  function handleRecordPayment() {
+  // ── Record payment (replaces recordPayment) — now persists, and actually reduces the customer's balance. ──
+  async function handleRecordPayment() {
     if (!form.custId || !form.amount || parseInt(form.amount) <= 0) {
       showToast('⚠ Select a customer and enter a valid amount.');
       return;
     }
-   const customer = state.customers.find(c => String(c.id) === String(form.custId));
-    dispatch({
-      type: 'ADD_PAYMENT',
-      payload: {
-        id: state.pid,
-        custId: parseInt(form.custId),
-        method: form.method,
-        amount: parseInt(form.amount),
-        date: new Date().toISOString().slice(0, 10),
+    const customer = state.customers.find(c => String(c.id) === String(form.custId));
+    const amount   = parseInt(form.amount);
+
+    try {
+      const savedPayment = await apiAddPayment({
+        custId: form.custId,
         orderId: null,
-      },
-    });
-    dispatch({
-      type: 'ADD_NOTIFICATION',
-      payload: {
-        id: state.nid,
-        msg: `Payment of ₱${form.amount} received from ${customer?.name} via ${form.method}.`,
-        type: 'System',
-        time: new Date().toLocaleDateString('en-PH'),
-        read: false,
-      },
-    });
-    showToast(`✅ Payment of ₱${form.amount} recorded!`);
-    setForm({ custId: '', method: 'Cash', amount: '' });
-    setShowModal(false);
+        amount,
+        method: form.method,
+      });
+      dispatch({ type: 'ADD_PAYMENT', payload: savedPayment });
+
+      // Apply the payment against the customer's outstanding balance (never below 0).
+      if (customer) {
+        const newBalance = Math.max(0, (parseFloat(customer.balance) || 0) - amount);
+        const updatedCustomer = await apiUpdateCustomer(customer.id, { ...customer, balance: newBalance });
+        dispatch({ type: 'UPDATE_CUSTOMER', payload: { ...updatedCustomer, name: updatedCustomer.fullName ?? customer.name, addr: updatedCustomer.address ?? customer.addr } });
+      }
+
+      dispatch({
+        type: 'ADD_NOTIFICATION',
+        payload: {
+          id: state.nid,
+          msg: `Payment of ₱${amount} received from ${customer?.name} via ${form.method}.`,
+          type: 'System',
+          time: new Date().toLocaleDateString('en-PH'),
+          read: false,
+        },
+      });
+      showToast(`✅ Payment of ₱${amount} recorded!`);
+      setForm({ custId: '', method: 'Cash', amount: '' });
+      setShowModal(false);
+    } catch {
+      showToast('❌ Failed to save payment.');
+    }
   }
 
   // ── Payment method badge color ──
