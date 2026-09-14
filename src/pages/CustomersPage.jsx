@@ -2,6 +2,8 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/ui/Modal';
+import { showToast } from '../components/ui/Toast';
+import { apiAddCustomer } from '../api';
 
 export default function CustomersPage() {
   const { state, dispatch } = useApp();
@@ -16,15 +18,24 @@ export default function CustomersPage() {
     return true;
   });
 
-  // Replaces addCustomer()
-  function handleAddCustomer() {
+  // Replaces addCustomer() — now actually persists to the database instead of local-only state.
+  async function handleAddCustomer() {
     if (!form.name || !form.phone || !form.addr) return alert('Please fill all fields.');
-    dispatch({
-      type: 'ADD_CUSTOMER',
-      payload: { id: state.cid, ...form, balance: 0, orders: 0 }
-    });
-    setForm({ name: '', phone: '', addr: '' });
-    setShowModal(false);
+    try {
+      const saved = await apiAddCustomer({
+        fullName: form.name,
+        email: '',
+        phone: form.phone,
+        address: form.addr,
+        balance: 0,
+      });
+      dispatch({ type: 'ADD_CUSTOMER', payload: { ...saved, name: saved.fullName, addr: saved.address, orders: 0 } });
+      showToast(`✅ ${form.name} added!`);
+      setForm({ name: '', phone: '', addr: '' });
+      setShowModal(false);
+    } catch {
+      showToast('❌ Failed to save customer.');
+    }
   }
 
   return (
