@@ -139,14 +139,19 @@ app.put('/api/users/:id', async (req, res) => {
 });
 
 app.post('/api/customers', async (req, res) => {
-  const { fullName, email, phone, address, balance } = req.body;
-  const newId = id();
-  await pool.query(
-    'INSERT INTO customers (id, fullName, email, phone, address, balance) VALUES (?,?,?,?,?,?)',
-    [newId, fullName, email, phone, address, balance || 0]
-  );
-  const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [newId]);
-  res.json(rows[0]);
+  try {
+    const { fullName, email, phone, address, balance } = req.body;
+    const newId = id();
+    await pool.query(
+      'INSERT INTO customers (id, fullName, email, phone, address, balance) VALUES (?,?,?,?,?,?)',
+      [newId, fullName, email || null, phone, address, balance || 0]
+    );
+    const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [newId]);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Failed to add customer:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 app.put('/api/customers/:id', async (req, res) => {

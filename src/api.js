@@ -26,7 +26,9 @@ export async function apiAddCustomer(data) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  return res.json();
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.message || 'Failed to add customer');
+  return result;
 }
 export async function apiUpdateCustomer(id, data) {
   const res = await fetch(`${BASE}/customers/${id}`, {

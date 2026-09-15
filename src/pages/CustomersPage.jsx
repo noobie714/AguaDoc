@@ -1,4 +1,7 @@
 // src/pages/CustomersPage.jsx
+// NOTE: This list is for WALK-IN customers who don't have (or won't create) an account.
+// Registered app customers aren't added here — their debt tracking can be wired up later
+// via apiGetAvailableCustomers() / apiLinkCustomer() in api.js if that's ever needed.
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/ui/Modal';
@@ -7,9 +10,10 @@ import { apiAddCustomer } from '../api';
 
 export default function CustomersPage() {
   const { state, dispatch } = useApp();
-  const [showModal, setShowModal]   = useState(false);
-  const [filter, setFilter]         = useState('All');
-  const [form, setForm]             = useState({ name: '', phone: '', addr: '' });
+  const [showModal, setShowModal] = useState(false);
+  const [filter, setFilter]       = useState('All');
+  const [saving, setSaving]       = useState(false);
+  const [form, setForm]           = useState({ name: '', phone: '', addr: '' });
 
   // Replaces filterCustomers()
   const filtered = state.customers.filter(c => {
@@ -18,23 +22,26 @@ export default function CustomersPage() {
     return true;
   });
 
-  // Replaces addCustomer() — now actually persists to the database instead of local-only state.
+  // Persists the walk-in customer to the database, then reflects the confirmed row locally.
   async function handleAddCustomer() {
     if (!form.name || !form.phone || !form.addr) return alert('Please fill all fields.');
+    setSaving(true);
     try {
       const saved = await apiAddCustomer({
         fullName: form.name,
-        email: '',
+        email: null,          // walk-ins usually don't have one — kept as NULL, not '', to avoid unique-key clashes
         phone: form.phone,
         address: form.addr,
         balance: 0,
       });
-      dispatch({ type: 'ADD_CUSTOMER', payload: { ...saved, name: saved.fullName, addr: saved.address, orders: 0 } });
+      dispatch({ type: 'ADD_CUSTOMER', payload: { ...saved, orders: 0 } });
       showToast(`✅ ${form.name} added!`);
       setForm({ name: '', phone: '', addr: '' });
       setShowModal(false);
-    } catch {
-      showToast('❌ Failed to save customer.');
+    } catch (err) {
+      showToast(`❌ ${err.message || 'Failed to save customer.'}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -82,9 +89,9 @@ export default function CustomersPage() {
           <tbody>
             {filtered.map(c => (
               <tr key={c.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
-                <td className="px-3 py-2.5 font-medium">{c.name}</td>
+                <td className="px-3 py-2.5 font-medium">{c.fullName}</td>
                 <td className="px-3 py-2.5 text-gray-500">{c.phone}</td>
-                <td className="px-3 py-2.5 text-gray-500">{c.addr}</td>
+                <td className="px-3 py-2.5 text-gray-500">{c.address}</td>
                 <td className={`px-3 py-2.5 font-bold ${c.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   ₱{c.balance}
                 </td>
@@ -96,41 +103,51 @@ export default function CustomersPage() {
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-3 py-6 text-center text-gray-400">
+                  No walk-in customers yet — click "+ New Customer" to add one.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Modal */}
+      {/* Modal: manual walk-in entry */}
       {showModal && (
         <Modal title="👤 Register New Customer" onClose={() => setShowModal(false)}>
-          <div className="mb-3">
-            <label className="block text-[12.5px] font-semibold mb-1">Full Name</label>
-            <input
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] outline-none focus:border-accent"
-              placeholder="e.g. Juan Dela Cruz"
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-            />
+          <div className="space-y-3">
+            <div>
+              <label className="text-[12.5px] font-semibold text-gray-600">Full Name</label>
+              <input
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
+                placeholder="e.g. Juan Dela Cruz"
+              />
+            </div>
+            <div>
+              <label className="text-[12.5px] font-semibold text-gray-600">Phone Number</label>
+              <input
+                value={form.phone}
+                onChange={e => setForm({ ...form, phone: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
+                placeholder="09123456789"
+              />
+            </div>
+            <div>
+              <label className="text-[12.5px] font-semibold text-gray-600">Delivery Address</label>
+              <input
+                value={form.addr}
+                onChange={e => setForm({ ...form, addr: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
+                placeholder="e.g. Liloan, Cebu"
+              />
+            </div>
           </div>
-          <div className="mb-3">
-            <label className="block text-[12.5px] font-semibold mb-1">Phone Number</label>
-            <input
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] outline-none focus:border-accent"
-              placeholder="09XX-XXX-XXXX"
-              value={form.phone}
-              onChange={e => setForm({ ...form, phone: e.target.value })}
-            />
-          </div>
-          <div className="mb-3">
-            <label className="block text-[12.5px] font-semibold mb-1">Delivery Address</label>
-            <input
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] outline-none focus:border-accent"
-              placeholder="Enter complete address"
-              value={form.addr}
-              onChange={e => setForm({ ...form, addr: e.target.value })}
-            />
-          </div>
-          <div className="flex gap-2 justify-end mt-4">
+
+          <div className="flex justify-end gap-2 mt-5">
             <button
               onClick={() => setShowModal(false)}
               className="px-4 py-2 border border-gray-200 rounded-lg text-[12.5px] font-semibold hover:bg-gray-50"
@@ -139,9 +156,10 @@ export default function CustomersPage() {
             </button>
             <button
               onClick={handleAddCustomer}
-              className="px-4 py-2 bg-accent text-white rounded-lg text-[12.5px] font-semibold hover:bg-accent2"
+              disabled={saving}
+              className="px-4 py-2 bg-accent text-white rounded-lg text-[12.5px] font-semibold hover:bg-accent2 disabled:opacity-50"
             >
-              💾 Save Customer
+              {saving ? 'Saving...' : '💾 Save Customer'}
             </button>
           </div>
         </Modal>
