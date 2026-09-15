@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
-import { apiGetCustomers, apiGetOrders, apiGetPayments, apiGetInventory, apiGetContainers, apiGetUsers } from '../api';
+import { apiGetCustomers, apiGetOrders, apiGetPayments, apiGetInventory, apiGetContainers, apiGetUsers, apiGetNotifications } from '../api';
 
 const AppContext = createContext(null);
 
@@ -33,8 +33,12 @@ function reducer(state, action) {
       return { ...state, payments: [...state.payments, action.payload] };
     case 'SET_INVENTORY':
       return { ...state, inventory: action.payload };
-    case 'ADD_NOTIFICATION':
-      return { ...state, notifications: [action.payload, ...state.notifications] };
+    case 'SET_NOTIFICATIONS':
+      return { ...state, notifications: action.payload };
+    case 'MARK_NOTIFICATION_READ':
+      return { ...state, notifications: state.notifications.map(n => n.id === action.id ? { ...n, read: 1 } : n) };
+    case 'MARK_ALL_NOTIFICATIONS_READ':
+      return { ...state, notifications: state.notifications.map(n => ({ ...n, read: 1 })) };
     case 'SET_USERS':
       return { ...state, users: action.payload };
     default:
@@ -45,8 +49,8 @@ function reducer(state, action) {
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-useEffect(() => {
-  const KEYS = ['customers', 'orders', 'payments', 'inventory', 'containers', 'users'];
+  useEffect(() => {
+  const KEYS = ['customers', 'orders', 'payments', 'inventory', 'containers', 'users', 'notifications'];
 
   const fetchAll = () => {
     Promise.allSettled([
@@ -55,7 +59,8 @@ useEffect(() => {
       apiGetPayments(),
       apiGetInventory(),
       apiGetContainers(),
-      apiGetUsers()
+      apiGetUsers(),
+      apiGetNotifications('admin')
     ]).then((results) => {
       const payload = {};
       results.forEach((result, i) => {
@@ -71,8 +76,8 @@ useEffect(() => {
     });
   };
 
-  fetchAll();                                    // initial load
-  const interval = setInterval(fetchAll, 8000);  // re-sync every 8s
+  fetchAll();                              // initial load
+  const interval = setInterval(fetchAll, 8000); // re-sync every 8s (picks up new customer orders)
   return () => clearInterval(interval);
 }, []);
 

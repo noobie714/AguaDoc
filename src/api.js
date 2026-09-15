@@ -30,6 +30,14 @@ export async function apiAddCustomer(data) {
   if (!res.ok) throw new Error(result.message || 'Failed to add customer');
   return result;
 }
+export async function apiGetAvailableCustomers() {
+  const res = await fetch(`${BASE}/customers/available`);
+  return res.json();
+}
+export async function apiLinkCustomer(userId) {
+  const res = await fetch(`${BASE}/customers/link/${userId}`, { method: 'POST' });
+  return res.json();
+}
 export async function apiUpdateCustomer(id, data) {
   const res = await fetch(`${BASE}/customers/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -62,6 +70,10 @@ export async function apiUpdateOrder(id, data) {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
+  return res.json();
+}
+export async function apiGetDeliveryRoute() {
+  const res = await fetch(`${BASE}/delivery-route`);
   return res.json();
 }
 
@@ -118,7 +130,19 @@ export async function apiUpdateUser(id, data) {
   });
   return res.json();
 }
-export async function apiGetDeliveryRoute() {
-  const res = await fetch(`${BASE}/delivery-route`);
+export async function apiGetNotifications(audience, userId) {
+  const qs = audience === 'customer' ? `?audience=customer&userId=${userId}` : `?audience=admin`;
+  const res = await fetch(`${BASE}/notifications${qs}`);
+  return res.json();
+}
+export async function apiMarkNotificationRead(id) {
+  const res = await fetch(`${BASE}/notifications/${id}/read`, { method: 'PUT' });
+  return res.json();
+}
+export async function apiMarkAllNotificationsRead(audience, userId) {
+  const res = await fetch(`${BASE}/notifications/read-all`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audience, userId })
+  });
   return res.json();
 }

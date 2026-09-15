@@ -45,19 +45,11 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
       if (customer) {
         const newBalance = Math.max(0, (parseFloat(customer.balance) || 0) - amount);
         const updatedCustomer = await apiUpdateCustomer(customer.id, { ...customer, balance: newBalance });
-        dispatch({ type: 'UPDATE_CUSTOMER', payload: { ...updatedCustomer, name: updatedCustomer.fullName ?? customer.name, addr: updatedCustomer.address ?? customer.addr } });
+        dispatch({ type: 'UPDATE_CUSTOMER', payload: updatedCustomer });
       }
 
-      dispatch({
-        type: 'ADD_NOTIFICATION',
-        payload: {
-          id: state.nid,
-          msg: `Payment of ₱${amount} received from ${customer?.name} via ${form.method}.`,
-          type: 'System',
-          time: new Date().toLocaleDateString('en-PH'),
-          read: false,
-        },
-      });
+      // A "Payment received" notification is created automatically on the backend
+      // (only reaches the customer's own dashboard if this customer has a linked account).
       showToast(`✅ Payment of ₱${amount} recorded!`);
       setForm({ custId: '', method: 'Cash', amount: '' });
       setShowModal(false);
@@ -125,7 +117,7 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
               unpaidCustomers.map(c => (
                 <div key={c.id} className="flex justify-between items-center bg-gray-50 rounded-lg px-3 py-2.5 mb-2">
                   <div>
-                    <div className="text-[13.5px] font-semibold">{c.name}</div>
+                    <div className="text-[13.5px] font-semibold">{c.fullName}</div>
                     <div className="text-[11.5px] text-gray-500">{c.phone}</div>
                   </div>
                   <div className="text-base font-black text-red-600">₱{c.balance}</div>
@@ -198,7 +190,7 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
             >
               <option value="">-- Select Customer --</option>
               {state.customers.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>{c.fullName}</option>
               ))}
             </select>
           </div>

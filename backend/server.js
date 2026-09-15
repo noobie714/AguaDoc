@@ -27,6 +27,8 @@ pool.getConnection()
 const id = () => Date.now().toString();
 
 // ── Geocoding (Nominatim / OpenStreetMap — free, no API key needed) ──
+// Nominatim's usage policy requires a real User-Agent and asks for max ~1 request/sec,
+// which is fine here since this only runs once per order placed.
 async function geocodeAddress(address) {
   if (!address) return { lat: null, lng: null };
   try {
@@ -36,15 +38,75 @@ async function geocodeAddress(address) {
       { headers: { 'User-Agent': 'AguaDoc-Capstone/1.0 (school project)' } }
     );
     const results = await geoRes.json();
-    if (results[0]) return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+    if (results[0]) {
+      return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+    }
   } catch (err) {
     console.warn('Geocoding failed for address:', address, err.message);
   }
   return { lat: null, lng: null };
 }
 
-// Your refill station's coordinates — TODO: replace with AguaDoc's real location in Barangay Pajo.
+// Your refill station's coordinates — used as the route's starting point.
+// TODO: replace with AguaDoc's actual station location in Barangay Pajo.
 const DEPOT = { lat: 10.3157, lng: 123.9740, name: 'AguaDoc Station' };
+
+// ── Notifications helper ──
+// audience: 'admin' or 'customer'. userId is required (and only meaningful) for 'customer' notifications.
+async function createNotification({ audience, userId = null, message, type = 'System' }) {
+  try {
+    await pool.query(
+      'INSERT INTO notifications (id, audience, userId, message, type, `read`) VALUES (?,?,?,?,?,0)',
+      [id(), audience, userId, message, type]
+    );
+  } catch (err) {
+    console.warn('Failed to create notification:', err.message);
+  }
+}
+
+// A walk-in customer's id only matches a real login if an admin explicitly linked their account
+// (see /api/customers/link/:userId). This checks that before sending anything to a customer's own dashboard.
+async function customerHasAccount(customerId) {
+  const [[u]] = await pool.query('SELECT id FROM users WHERE id = ?', [customerId]);
+  return !!u;
+}
+
+const DEBT_RISK_THRESHOLD = 300;     // matches the "High risk" cutoff used on the Predictions page
+const LOW_STOCK_THRESHOLD = 20;      // percent
+
+// ── Unpaid-balance reminders (runs periodically, not tied to any single request) ──
+const REMINDER_COOLDOWN_HOURS = 24;  // don't re-remind the same customer more than once per day
+async function checkUnpaidBalances() {
+  try {
+    const [debtors] = await pool.query(
+      `SELECT * FROM customers
+       WHERE balance > 0 AND (remindedAt IS NULL OR remindedAt < NOW() - INTERVAL ? HOUR)`,
+      [REMINDER_COOLDOWN_HOURS]
+    );
+    if (debtors.length === 0) return;
+
+    for (const c of debtors) {
+      if (await customerHasAccount(c.id)) {
+        await createNotification({
+          audience: 'customer',
+          userId: c.id,
+          message: `Reminder: you have an outstanding balance of ₱${c.balance}.`,
+          type: 'Debt',
+        });
+      }
+      await pool.query('UPDATE customers SET remindedAt = NOW() WHERE id = ?', [c.id]);
+    }
+
+    const totalOwed = debtors.reduce((sum, c) => sum + parseFloat(c.balance), 0);
+    await createNotification({
+      audience: 'admin',
+      message: `${debtors.length} customer(s) have unpaid balances totaling ₱${totalOwed.toFixed(2)}.`,
+      type: 'Debt',
+    });
+  } catch (err) {
+    console.warn('Unpaid-balance check failed:', err.message);
+  }
+}
 
 // ====================== ROUTES ======================
 
@@ -138,6 +200,33 @@ app.put('/api/users/:id', async (req, res) => {
   res.json(rows[0]);
 });
 
+// ── Registered accounts not yet linked to debt tracking ──
+app.get('/api/customers/available', async (req, res) => {
+  const [rows] = await pool.query(
+    `SELECT id, fullName, email, phone, address FROM users
+     WHERE role = 'customer' AND id NOT IN (SELECT id FROM customers)
+     ORDER BY fullName ASC`
+  );
+  res.json(rows);
+});
+
+// ── Link a registered account into debt tracking (reuses their account id, so it's the same identity) ──
+app.post('/api/customers/link/:userId', async (req, res) => {
+  try {
+    const [[user]] = await pool.query('SELECT * FROM users WHERE id = ?', [req.params.userId]);
+    if (!user) return res.status(404).json({ success: false, message: 'Account not found' });
+
+    await pool.query(
+      'INSERT INTO customers (id, fullName, email, phone, address, balance) VALUES (?,?,?,?,?,0)',
+      [user.id, user.fullName, user.email, user.phone, user.address]
+    );
+    const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [user.id]);
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.post('/api/customers', async (req, res) => {
   try {
     const { fullName, email, phone, address, balance } = req.body;
@@ -147,6 +236,7 @@ app.post('/api/customers', async (req, res) => {
       [newId, fullName, email || null, phone, address, balance || 0]
     );
     const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [newId]);
+    await createNotification({ audience: 'admin', message: `New walk-in customer added: ${fullName}.`, type: 'System' });
     res.json(rows[0]);
   } catch (err) {
     console.error('Failed to add customer:', err.message);
@@ -157,11 +247,25 @@ app.post('/api/customers', async (req, res) => {
 app.put('/api/customers/:id', async (req, res) => {
   try {
     const { fullName, email, phone, address, balance } = req.body;
+    const [[before]] = await pool.query('SELECT balance FROM customers WHERE id = ?', [req.params.id]);
+
     await pool.query(
       'UPDATE customers SET fullName=?, email=?, phone=?, address=?, balance=? WHERE id=?',
       [fullName, email || null, phone, address, balance, req.params.id]
     );
     const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [req.params.id]);
+
+    // Only fire once, right when the customer crosses INTO high-risk territory — not on every save after that.
+    const oldBalance = parseFloat(before?.balance ?? 0);
+    const newBalance = parseFloat(balance ?? 0);
+    if (newBalance >= DEBT_RISK_THRESHOLD && oldBalance < DEBT_RISK_THRESHOLD) {
+      await createNotification({
+        audience: 'admin',
+        message: `${fullName} now owes ₱${newBalance} — flagged as high debt risk.`,
+        type: 'Debt',
+      });
+    }
+
     res.json(rows[0]);
   } catch (err) {
     console.error('Failed to update customer:', err.message);
@@ -174,6 +278,42 @@ app.delete('/api/customers/:id', async (req, res) => {
   res.json({ success: true });
 });
 
+// ── NOTIFICATIONS ──
+app.get('/api/notifications', async (req, res) => {
+  const { audience, userId } = req.query;
+  try {
+    const [rows] = audience === 'customer'
+      ? await pool.query('SELECT * FROM notifications WHERE audience = "customer" AND userId = ? ORDER BY createdAt DESC', [userId])
+      : await pool.query('SELECT * FROM notifications WHERE audience = "admin" ORDER BY createdAt DESC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.put('/api/notifications/:id/read', async (req, res) => {
+  try {
+    await pool.query('UPDATE notifications SET `read` = 1 WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.put('/api/notifications/read-all', async (req, res) => {
+  const { audience, userId } = req.body;
+  try {
+    if (audience === 'customer') {
+      await pool.query('UPDATE notifications SET `read` = 1 WHERE audience = "customer" AND userId = ?', [userId]);
+    } else {
+      await pool.query('UPDATE notifications SET `read` = 1 WHERE audience = "admin"');
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── ORDERS ──
 app.get('/api/orders', async (req, res) => {
   const { userId } = req.query;
@@ -184,16 +324,29 @@ app.get('/api/orders', async (req, res) => {
 });
 
 app.post('/api/orders', async (req, res) => {
-  const { userId, type, quantity, status, total, address, payMethod, priority, notes } = req.body;
-  const newId  = id();
-  const newRef = 'ORD-' + newId.slice(-6);
-  const { lat, lng } = await geocodeAddress(address);
-  await pool.query(
-    'INSERT INTO orders (id, ref, userId, type, quantity, status, total, address, payMethod, priority, notes, lat, lng) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    [newId, newRef, userId, type, quantity || 1, status || 'Pending', total || 0, address || '', payMethod || '', priority || 'normal', notes || '', lat, lng]
-  );
-  const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [newId]);
-  res.json(rows[0]);
+  try {
+    const { userId, type, quantity, status, total, address, payMethod, priority, notes } = req.body;
+    const newId  = id();
+    const newRef = 'ORD-' + newId.slice(-6);
+    const { lat, lng } = await geocodeAddress(address);
+    await pool.query(
+      'INSERT INTO orders (id, ref, userId, type, quantity, status, total, address, payMethod, priority, notes, lat, lng) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [newId, newRef, userId, type, quantity || 1, status || 'Pending', total || 0, address || '', payMethod || '', priority || 'normal', notes || '', lat, lng]
+    );
+    const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [newId]);
+
+    const [[customer]] = await pool.query('SELECT fullName FROM users WHERE id = ?', [userId]);
+    await createNotification({
+      audience: 'admin',
+      message: `New ${type || 'delivery'} order from ${customer?.fullName || 'a customer'} — ${quantity || 1} gal.`,
+      type: 'Order',
+    });
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Failed to place order:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── DELIVERY ROUTE (optimized stop order via OSRM's free public Trip API) ──
@@ -209,6 +362,7 @@ app.get('/api/delivery-route', async (req, res) => {
       return res.json({ depot: DEPOT, stops: [], geometry: [] });
     }
 
+    // OSRM wants "lng,lat" pairs, depot first so the trip starts there.
     const coordString = [DEPOT, ...orders].map(o => `${o.lng},${o.lat}`).join(';');
 
     const osrmRes = await fetch(
@@ -221,27 +375,49 @@ app.get('/api/delivery-route', async (req, res) => {
       return res.status(500).json({ success: false, message: 'Route optimization failed', detail: trip });
     }
 
+    // waypoints[i] corresponds to input point i (0 = depot, 1..n = orders[0..n-1]).
+    // waypoint_index is where that point falls in the OPTIMIZED visiting order.
     const stops = trip.waypoints
       .map((wp, inputIndex) => ({ inputIndex, tripOrder: wp.waypoint_index }))
       .filter(w => w.inputIndex !== 0)
       .sort((a, b) => a.tripOrder - b.tripOrder)
       .map(w => orders[w.inputIndex - 1]);
 
-    res.json({ depot: DEPOT, stops, geometry: trip.trips[0].geometry.coordinates });
+    res.json({
+      depot: DEPOT,
+      stops,
+      geometry: trip.trips[0].geometry.coordinates, // array of [lng, lat]
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-
 app.put('/api/orders/:id', async (req, res) => {
-  const { status, type, quantity } = req.body;
-  await pool.query(
-    'UPDATE orders SET status=?, type=?, quantity=? WHERE id=?',
-    [status, type, quantity, req.params.id]
-  );
-  const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
-  res.json(rows[0]);
+  try {
+    const { status, type, quantity } = req.body;
+    const [[before]] = await pool.query('SELECT ref, userId, status FROM orders WHERE id = ?', [req.params.id]);
+
+    await pool.query(
+      'UPDATE orders SET status=?, type=?, quantity=? WHERE id=?',
+      [status, type, quantity, req.params.id]
+    );
+    const [rows] = await pool.query('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+
+    if (before && status && status !== before.status) {
+      await createNotification({
+        audience: 'customer',
+        userId: before.userId,
+        message: `Your order ${before.ref} is now ${status}.`,
+        type: 'Order',
+      });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Failed to update order:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── PAYMENTS ──
@@ -251,14 +427,29 @@ app.get('/api/payments', async (req, res) => {
 });
 
 app.post('/api/payments', async (req, res) => {
-  const { custId, orderId, amount, method } = req.body;
-  const newId = id();
-  await pool.query(
-    'INSERT INTO payments (id, custId, orderId, amount, method) VALUES (?,?,?,?,?)',
-    [newId, custId, orderId, amount, method]
-  );
-  const [rows] = await pool.query('SELECT * FROM payments WHERE id = ?', [newId]);
-  res.json(rows[0]);
+  try {
+    const { custId, orderId, amount, method } = req.body;
+    const newId = id();
+    await pool.query(
+      'INSERT INTO payments (id, custId, orderId, amount, method) VALUES (?,?,?,?,?)',
+      [newId, custId, orderId, amount, method]
+    );
+    const [rows] = await pool.query('SELECT * FROM payments WHERE id = ?', [newId]);
+
+    if (await customerHasAccount(custId)) {
+      await createNotification({
+        audience: 'customer',
+        userId: custId,
+        message: `Payment of ₱${amount} received via ${method} — thank you!`,
+        type: 'Payment',
+      });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Failed to record payment:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── INVENTORY ──
@@ -268,13 +459,31 @@ app.get('/api/inventory', async (req, res) => {
 });
 
 app.put('/api/inventory', async (req, res) => {
-  const { waterLevel, maxCapacity, readyGallons, totalGallons } = req.body;
-  await pool.query(
-    'UPDATE inventory SET waterLevel=?, maxCapacity=?, readyGallons=?, totalGallons=? WHERE id=1',
-    [waterLevel, maxCapacity, readyGallons, totalGallons]
-  );
-  const [rows] = await pool.query('SELECT * FROM inventory WHERE id = 1');
-  res.json(rows[0]);
+  try {
+    const { waterLevel, maxCapacity, readyGallons, totalGallons } = req.body;
+    const [[before]] = await pool.query('SELECT waterLevel, maxCapacity FROM inventory WHERE id = 1');
+
+    await pool.query(
+      'UPDATE inventory SET waterLevel=?, maxCapacity=?, readyGallons=?, totalGallons=? WHERE id=1',
+      [waterLevel, maxCapacity, readyGallons, totalGallons]
+    );
+    const [rows] = await pool.query('SELECT * FROM inventory WHERE id = 1');
+
+    const oldPct = before ? (before.waterLevel / before.maxCapacity) * 100 : 100;
+    const newPct = (waterLevel / maxCapacity) * 100;
+    if (newPct < LOW_STOCK_THRESHOLD && oldPct >= LOW_STOCK_THRESHOLD) {
+      await createNotification({
+        audience: 'admin',
+        message: `Water supply low: ${Math.round(newPct)}% remaining.`,
+        type: 'Inventory',
+      });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Failed to update inventory:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── CONTAINERS ──
@@ -298,4 +507,8 @@ app.delete('/api/containers/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-app.listen(PORT, () => console.log(`🚀 AguaDoc Backend running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 AguaDoc Backend running on http://localhost:${PORT}`);
+  checkUnpaidBalances();                                   // run once at startup
+  setInterval(checkUnpaidBalances, 10 * 60 * 1000);        // then re-check every 10 minutes
+});

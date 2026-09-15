@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, ShoppingCart, CreditCard, LogOut, Bell, User } from 'lucide-react';
-import { apiGetOrders, apiUpdateUser } from '../api';
+import { apiGetOrders, apiUpdateUser, apiGetNotifications, apiMarkNotificationRead, apiMarkAllNotificationsRead } from '../api';
 import RequestServicePage from './RequestServicePage';
 
 const NAV = [
@@ -22,6 +22,8 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
   const [active, setActive]   = useState('dashboard');
   const [orders, setOrders]   = useState([]);
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifs, setShowNotifs]        = useState(false);
 
   // Edit Profile state
   const [profileForm, setProfileForm] = useState({
@@ -39,6 +41,39 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
       .then(data => { setOrders(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
   }, [user.id]);
+
+  useEffect(() => {
+    const loadNotifs = () => {
+      apiGetNotifications('customer', user.id)
+        .then(data => setNotifications(Array.isArray(data) ? data : []))
+        .catch(() => {});
+    };
+    loadNotifs();
+    const interval = setInterval(loadNotifs, 15000); // check every 15s for new ones
+    return () => clearInterval(interval);
+  }, [user.id]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  async function handleMarkNotifRead(n) {
+    if (n.read) return;
+    setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: 1 } : x)); // instant feedback
+    try { await apiMarkNotificationRead(n.id); } catch { /* next poll will retry */ }
+  }
+
+  async function handleMarkAllNotifsRead() {
+    setNotifications(prev => prev.map(x => ({ ...x, read: 1 })));
+    try { await apiMarkAllNotificationsRead('customer', user.id); } catch { /* next poll will retry */ }
+  }
+
+  function timeAgo(dateStr) {
+    const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  }
 
   const stats = {
     total:     orders.length,
@@ -130,15 +165,54 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* Topbar */}
-        <header className="bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4">
+        <header className="relative bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4">
           <div className="flex items-center gap-2 flex-1 bg-gray-50 rounded-xl px-4 py-2 max-w-sm">
             <span className="text-gray-400 text-sm">🔍</span>
             <input placeholder="Search orders..." className="bg-transparent text-sm outline-none flex-1 text-gray-500" />
           </div>
-          <button className="relative ml-auto text-gray-400 hover:text-gray-600">
+          <button
+            onClick={() => setShowNotifs(v => !v)}
+            className="relative ml-auto text-gray-400 hover:text-gray-600"
+          >
             <Bell size={20} />
-            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center">0</span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center">
+                {unreadCount}
+              </span>
+            )}
           </button>
+
+          {showNotifs && (
+            <>
+              {/* click-away backdrop */}
+              <div className="fixed inset-0 z-10" onClick={() => setShowNotifs(false)} />
+              <div className="absolute right-6 top-14 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+                  <span className="text-[13px] font-bold">Notifications</span>
+                  {unreadCount > 0 && (
+                    <button onClick={handleMarkAllNotifsRead} className="text-[11.5px] text-[#0ea5c9] font-semibold hover:underline">
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="text-center text-gray-400 text-xs py-6">No notifications yet.</div>
+                  ) : notifications.map(n => (
+                    <div
+                      key={n.id}
+                      onClick={() => handleMarkNotifRead(n)}
+                      className={`px-4 py-2.5 border-b border-gray-50 last:border-b-0 cursor-pointer hover:bg-gray-50
+                        ${n.read ? '' : 'bg-blue-50'}`}
+                    >
+                      <p className="text-[12.5px] text-gray-700">{n.message}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{timeAgo(n.createdAt)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </header>
 
         {/* Content */}
