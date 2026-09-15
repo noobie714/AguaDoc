@@ -6,14 +6,16 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Modal from '../components/ui/Modal';
 import { showToast } from '../components/ui/Toast';
-import { apiAddCustomer } from '../api';
+import { apiAddCustomer, apiUpdateCustomer } from '../api';
 
 export default function CustomersPage() {
   const { state, dispatch } = useApp();
-  const [showModal, setShowModal] = useState(false);
-  const [filter, setFilter]       = useState('All');
-  const [saving, setSaving]       = useState(false);
-  const [form, setForm]           = useState({ name: '', phone: '', addr: '' });
+  const [showAddModal, setShowAddModal]   = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null); // customer object being edited, or null
+  const [filter, setFilter]               = useState('All');
+  const [saving, setSaving]               = useState(false);
+  const [form, setForm]                   = useState({ name: '', phone: '', addr: '' });
+  const [editForm, setEditForm]           = useState({ name: '', phone: '', addr: '', balance: '' });
 
   // Replaces filterCustomers()
   const filtered = state.customers.filter(c => {
@@ -22,14 +24,14 @@ export default function CustomersPage() {
     return true;
   });
 
-  // Persists the walk-in customer to the database, then reflects the confirmed row locally.
+  // Persists a new walk-in customer, then reflects the confirmed row locally.
   async function handleAddCustomer() {
     if (!form.name || !form.phone || !form.addr) return alert('Please fill all fields.');
     setSaving(true);
     try {
       const saved = await apiAddCustomer({
         fullName: form.name,
-        email: null,          // walk-ins usually don't have one — kept as NULL, not '', to avoid unique-key clashes
+        email: null,
         phone: form.phone,
         address: form.addr,
         balance: 0,
@@ -37,9 +39,45 @@ export default function CustomersPage() {
       dispatch({ type: 'ADD_CUSTOMER', payload: { ...saved, orders: 0 } });
       showToast(`✅ ${form.name} added!`);
       setForm({ name: '', phone: '', addr: '' });
-      setShowModal(false);
+      setShowAddModal(false);
     } catch (err) {
       showToast(`❌ ${err.message || 'Failed to save customer.'}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openEdit(c) {
+    setEditingCustomer(c);
+    setEditForm({
+      name: c.fullName ?? '',
+      phone: c.phone ?? '',
+      addr: c.address ?? '',
+      balance: c.balance ?? 0,
+    });
+  }
+
+  // Saves name/phone/address/balance — this is how you manually adjust a customer's debt
+  // (e.g. add a new unpaid delivery amount, or correct it) outside of the Payments flow.
+  async function handleSaveEdit() {
+    if (!editForm.name || !editForm.phone || !editForm.addr) return alert('Please fill all fields.');
+    if (editForm.balance === '' || isNaN(editForm.balance) || Number(editForm.balance) < 0) {
+      return alert('Balance must be a valid number, 0 or more.');
+    }
+    setSaving(true);
+    try {
+      const updated = await apiUpdateCustomer(editingCustomer.id, {
+        fullName: editForm.name,
+        email: editingCustomer.email || null,
+        phone: editForm.phone,
+        address: editForm.addr,
+        balance: Number(editForm.balance),
+      });
+      dispatch({ type: 'UPDATE_CUSTOMER', payload: { ...updated, orders: editingCustomer.orders } });
+      showToast(`✅ ${editForm.name} updated!`);
+      setEditingCustomer(null);
+    } catch (err) {
+      showToast(`❌ ${err.message || 'Failed to update customer.'}`);
     } finally {
       setSaving(false);
     }
@@ -51,7 +89,7 @@ export default function CustomersPage() {
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-bold">👥 Customers & Debt</h1>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => setShowAddModal(true)}
           className="bg-accent text-white px-4 py-2 rounded-lg text-[12.5px] font-semibold hover:bg-accent2 transition"
         >
           + New Customer
@@ -97,7 +135,10 @@ export default function CustomersPage() {
                 </td>
                 <td className="px-3 py-2.5 text-gray-500">{c.orders}</td>
                 <td className="px-3 py-2.5">
-                  <button className="border border-gray-200 rounded px-2 py-1 text-xs hover:bg-gray-50">
+                  <button
+                    onClick={() => openEdit(c)}
+                    className="border border-gray-200 rounded px-2 py-1 text-xs hover:bg-gray-50"
+                  >
                     ✏ Edit
                   </button>
                 </td>
@@ -114,9 +155,9 @@ export default function CustomersPage() {
         </table>
       </div>
 
-      {/* Modal: manual walk-in entry */}
-      {showModal && (
-        <Modal title="👤 Register New Customer" onClose={() => setShowModal(false)}>
+      {/* Modal: add new walk-in */}
+      {showAddModal && (
+        <Modal title="👤 Register New Customer" onClose={() => setShowAddModal(false)}>
           <div className="space-y-3">
             <div>
               <label className="text-[12.5px] font-semibold text-gray-600">Full Name</label>
@@ -149,7 +190,7 @@ export default function CustomersPage() {
 
           <div className="flex justify-end gap-2 mt-5">
             <button
-              onClick={() => setShowModal(false)}
+              onClick={() => setShowAddModal(false)}
               className="px-4 py-2 border border-gray-200 rounded-lg text-[12.5px] font-semibold hover:bg-gray-50"
             >
               Cancel
@@ -160,6 +201,69 @@ export default function CustomersPage() {
               className="px-4 py-2 bg-accent text-white rounded-lg text-[12.5px] font-semibold hover:bg-accent2 disabled:opacity-50"
             >
               {saving ? 'Saving...' : '💾 Save Customer'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal: edit existing customer, including balance */}
+      {editingCustomer && (
+        <Modal title={`✏ Edit ${editingCustomer.fullName}`} onClose={() => setEditingCustomer(null)}>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[12.5px] font-semibold text-gray-600">Full Name</label>
+              <input
+                value={editForm.name}
+                onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-[12.5px] font-semibold text-gray-600">Phone Number</label>
+              <input
+                value={editForm.phone}
+                onChange={e => setEditForm({ ...editForm, phone: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-[12.5px] font-semibold text-gray-600">Delivery Address</label>
+              <input
+                value={editForm.addr}
+                onChange={e => setEditForm({ ...editForm, addr: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-[12.5px] font-semibold text-gray-600">Balance (₱)</label>
+              <input
+                type="number"
+                min="0"
+                value={editForm.balance}
+                onChange={e => setEditForm({ ...editForm, balance: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
+                placeholder="0"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Set this directly to add a new unpaid amount or correct an existing one.
+                Recording an actual payment on the Payments page will reduce this automatically instead.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-5">
+            <button
+              onClick={() => setEditingCustomer(null)}
+              className="px-4 py-2 border border-gray-200 rounded-lg text-[12.5px] font-semibold hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEdit}
+              disabled={saving}
+              className="px-4 py-2 bg-accent text-white rounded-lg text-[12.5px] font-semibold hover:bg-accent2 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : '💾 Save Changes'}
             </button>
           </div>
         </Modal>

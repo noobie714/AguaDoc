@@ -155,13 +155,18 @@ app.post('/api/customers', async (req, res) => {
 });
 
 app.put('/api/customers/:id', async (req, res) => {
-  const { fullName, email, phone, address, balance } = req.body;
-  await pool.query(
-    'UPDATE customers SET fullName=?, email=?, phone=?, address=?, balance=? WHERE id=?',
-    [fullName, email, phone, address, balance, req.params.id]
-  );
-  const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [req.params.id]);
-  res.json(rows[0]);
+  try {
+    const { fullName, email, phone, address, balance } = req.body;
+    await pool.query(
+      'UPDATE customers SET fullName=?, email=?, phone=?, address=?, balance=? WHERE id=?',
+      [fullName, email || null, phone, address, balance, req.params.id]
+    );
+    const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [req.params.id]);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Failed to update customer:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 app.delete('/api/customers/:id', async (req, res) => {

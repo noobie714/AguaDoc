@@ -35,7 +35,9 @@ export async function apiUpdateCustomer(id, data) {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  return res.json();
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.message || 'Failed to update customer');
+  return result;
 }
 export async function apiDeleteCustomer(id) {
   const res = await fetch(`${BASE}/customers/${id}`, { method: 'DELETE' });
