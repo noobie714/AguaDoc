@@ -100,7 +100,7 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
   // ── Submit ──
   async function handleConfirm() {
   if (isDelivery && !payMethod) { setError('Please select a payment method.'); return; }
-  if ((payMethod === 'gcash' || payMethod === 'maya') && !refNumber.trim()) {
+  if (isDelivery && (payMethod === 'gcash' || payMethod === 'maya') && !refNumber.trim()) {
     setError('Please enter your reference number.'); return;
   }
   setLoading(true);
@@ -184,14 +184,14 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
                 title="Walk-in / Pickup"
                 subtitle="Free"
                 selected={orderType === 'walkin'}
-                onClick={() => { setOrderType('walkin'); setError(''); }}
+                onClick={() => { setOrderType('walkin'); setError(''); setPayMethod(''); setRefNumber(''); }}
               />
               <OrderTypeCard
                 emoji="🛵"
                 title="Delivery"
                 subtitle={`+ ₱${DELIVERY_FEE}.00`}
                 selected={orderType === 'delivery'}
-                onClick={() => { setOrderType('delivery'); setError(''); }}
+                onClick={() => { setOrderType('delivery'); setError(''); setPayMethod(''); setRefNumber(''); }}
               />
             </div>
 
