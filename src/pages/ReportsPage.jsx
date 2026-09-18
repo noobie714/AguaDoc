@@ -1,5 +1,5 @@
 // src/pages/ReportsPage.jsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { showToast } from '../components/ui/Toast';
 import { Chart } from 'chart.js/auto';
@@ -15,17 +15,51 @@ export default function ReportsPage() {
   const collected   = state.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
   const outstanding = state.customers.reduce((sum, c) => sum + (parseFloat(c.balance) || 0), 0);
 
+  // ── Real revenue breakdown, built from actual Delivered orders (no hardcoded numbers) ──
+  const { weeklyLabels, weeklyData, monthlyLabels, monthlyData } = useMemo(() => {
+    const delivered = state.orders.filter(o => o.status === 'Delivered');
+
+    // Last 7 calendar days
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weeklyLabels = [];
+    const weeklyData   = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      const total = delivered
+        .filter(o => new Date(o.date).toISOString().slice(0, 10) === key)
+        .reduce((sum, o) => sum + (parseFloat(o.total ?? o.amount) || 0), 0);
+      weeklyLabels.push(d.toLocaleDateString('en-PH', { weekday: 'short' }));
+      weeklyData.push(total);
+    }
+
+    // Last 12 calendar months
+    const monthlyLabels = [];
+    const monthlyData   = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const total = delivered
+        .filter(o => {
+          const od = new Date(o.date);
+          return od.getFullYear() === d.getFullYear() && od.getMonth() === d.getMonth();
+        })
+        .reduce((sum, o) => sum + (parseFloat(o.total ?? o.amount) || 0), 0);
+      monthlyLabels.push(d.toLocaleDateString('en-PH', { month: 'short' }));
+      monthlyData.push(total);
+    }
+
+    return { weeklyLabels, weeklyData, monthlyLabels, monthlyData };
+  }, [state.orders]);
+
   // ── Revenue chart (replaces renderReports chart) ──
   useEffect(() => {
     if (chartRef.current) chartRef.current.destroy();
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
-    const labels = mode === 'weekly'
-      ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-      : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const data = mode === 'weekly'
-      ? [200, 320, 280, 400, 350, 420, 380]
-      : [1200, 1800, 1500, 2200, 1900, 2500, 2100, 2400, 2000, 2700, 2300, 2800];
+    const labels = mode === 'weekly' ? weeklyLabels : monthlyLabels;
+    const data   = mode === 'weekly' ? weeklyData   : monthlyData;
     chartRef.current = new Chart(ctx, {
       type: 'bar',
       data: {
@@ -42,7 +76,7 @@ export default function ReportsPage() {
       },
     });
     return () => chartRef.current?.destroy();
-  }, [mode]);
+  }, [mode, weeklyLabels, weeklyData, monthlyLabels, monthlyData]);
 
   // ── Export CSV (replaces exportCSV) ──
   function handleExportCSV() {
@@ -56,7 +90,7 @@ export default function ReportsPage() {
         (String(p.custId) === String(id) || String(p.userId) === String(id)) && p.orderId === o.id
       );
       rows.push([
-        c?.name ?? c?.fullName ?? '—',
+        c?.fullName ?? '—',
         '#' + o.id,
         o.quantity ?? o.gallons ?? '—',
         '₱' + (o.total ?? o.amount ?? 0),
@@ -174,7 +208,7 @@ export default function ReportsPage() {
                 : '—';
               return (
                 <tr key={o.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
-                  <td className="px-2.5 py-2.5 font-medium">{customer?.name ?? customer?.fullName ?? '—'}</td>
+                  <td className="px-2.5 py-2.5 font-medium">{customer?.fullName ?? '—'}</td>
                   <td className="px-2.5 py-2.5 font-mono text-gray-600">#{String(o.id).padStart(2, '0')}</td>
                   <td className="px-2.5 py-2.5 text-gray-500">{o.quantity ?? o.gallons ?? '—'}</td>
                   <td className="px-2.5 py-2.5 font-semibold">₱{o.total ?? o.amount ?? '—'}</td>

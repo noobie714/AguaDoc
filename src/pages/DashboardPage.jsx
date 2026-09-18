@@ -1,10 +1,28 @@
 // src/pages/DashboardPage.jsx
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Chart } from 'chart.js/auto';
 import { useApp } from '../context/AppContext';
 
 const PRICE = 50;
+
+function dateKey(d) {
+  return new Date(d).toISOString().slice(0, 10);
+}
+function shortLabel(d) {
+  return new Date(d).toLocaleDateString('en-PH', { weekday: 'short' });
+}
+// Same lightweight least-squares fit used on the Predictions page.
+function linearRegression(values) {
+  const n = values.length;
+  if (n < 2) return { slope: 0, intercept: values[0] || 0 };
+  const xMean = (n - 1) / 2;
+  const yMean = values.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  values.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) ** 2; });
+  const slope = den === 0 ? 0 : num / den;
+  return { slope, intercept: yMean - slope * xMean };
+}
 
 export default function DashboardPage() {
   const { state } = useApp();
@@ -28,6 +46,37 @@ export default function DashboardPage() {
     (state.inventory.waterLevel / state.inventory.maxCapacity) * 100
   );
 
+  // ── This week vs last week — real week-over-week comparison, not a fixed badge ──
+  const { last7Days, last7Totals, weekChangePct } = useMemo(() => {
+    const byDay = {};
+    state.orders
+      .filter(o => o.status === 'Delivered')
+      .forEach(o => {
+        const key = dateKey(o.date);
+        byDay[key] = (byDay[key] || 0) + (parseFloat(o.total ?? o.amount) || 0);
+      });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      days.push({ date: d, total: byDay[dateKey(d)] || 0 });
+    }
+    const last7Days   = days.slice(7).map(d => d.date);
+    const last7Totals = days.slice(7).map(d => d.total);
+    const prev7Totals = days.slice(0, 7).map(d => d.total);
+
+    const thisWeekSum = last7Totals.reduce((a, b) => a + b, 0);
+    const prevWeekSum = prev7Totals.reduce((a, b) => a + b, 0);
+    const weekChangePct = prevWeekSum === 0
+      ? (thisWeekSum > 0 ? 100 : 0)
+      : Math.round(((thisWeekSum - prevWeekSum) / prevWeekSum) * 100);
+
+    return { last7Days, last7Totals, weekChangePct };
+  }, [state.orders]);
+
   // ── Alerts (replaces the alerts[] array in renderDashboard) ──
   const alerts = [];
   if (waterPct < 20)
@@ -36,33 +85,46 @@ export default function DashboardPage() {
     .filter(c => c.balance > 0)
     .slice(0, 2)
     .forEach(c =>
-      alerts.push({ type: 'danger', msg: `${c.name} has an overdue balance of ₱${c.balance}.` })
+      alerts.push({ type: 'danger', msg: `${c.fullName} has an overdue balance of ₱${c.balance}.` })
     );
   if (pendingOrders > 0)
     alerts.push({ type: 'info',   msg: `${pendingOrders} pending order(s) need attention.` });
 
-  // ── Best customers (replaces bestCustomers table) ──
-  const bestCustomers = [...state.customers]
-    .sort((a, b) => b.orders - a.orders)
-    .slice(0, 4);
+  // ── Best customers — ranked by real money actually paid, not a fake formula ──
+  const bestCustomers = useMemo(() => {
+    return state.customers
+      .map(c => {
+        const ordersCount = state.orders.filter(o => String(o.custId ?? o.userId) === String(c.id)).length;
+        const totalPaid   = state.payments
+          .filter(p => String(p.custId) === String(c.id))
+          .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+        return { ...c, ordersCount, totalPaid };
+      })
+      .sort((a, b) => b.totalPaid - a.totalPaid)
+      .slice(0, 4);
+  }, [state.customers, state.orders, state.payments]);
 
   // ── Recent orders (replaces recentOrders table) ──
   const recentOrders = [...state.orders]
     .reverse()
     .slice(0, 4);
 
-  // ── Chart (replaces new Chart(dashChart, ...) in renderDashboard) ──
+  // ── Chart: real actual sales for the last 7 days, vs. the trend line's fit for the same days ──
   useEffect(() => {
     if (chartRef.current) chartRef.current.destroy();
     const ctx = canvasRef.current.getContext('2d');
+
+    const { slope, intercept } = linearRegression(last7Totals);
+    const fitted = last7Totals.map((_, x) => Math.max(0, Math.round(slope * x + intercept)));
+
     chartRef.current = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: last7Days.map(shortLabel),
         datasets: [
           {
             label: 'Actual',
-            data: [200, 320, 280, 400, 350, 420, 380],
+            data: last7Totals,
             borderColor: '#1eb8c8',
             backgroundColor: 'rgba(30,184,200,.1)',
             tension: 0.4,
@@ -72,7 +134,7 @@ export default function DashboardPage() {
           },
           {
             label: 'Predicted',
-            data: [220, 300, 290, 380, 360, 410, 395],
+            data: fitted,
             borderColor: '#6b46c1',
             borderDash: [5, 4],
             tension: 0.4,
@@ -93,7 +155,7 @@ export default function DashboardPage() {
       },
     });
     return () => chartRef.current?.destroy();
-  }, []);
+  }, [last7Days, last7Totals]);
 
   // ── Alert style helper ──
   const alertStyle = {
@@ -125,8 +187,9 @@ export default function DashboardPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-3.5">
           <div className="text-xs text-gray-500 mb-1">Total Sales (This Week)</div>
           <div className="text-[22px] font-black text-gray-800">₱{totalSales}</div>
-          <span className="inline-block text-[11px] px-2 py-0.5 rounded-full font-semibold mt-1 bg-green-100 text-green-800">
-            +12.5%
+          <span className={`inline-block text-[11px] px-2 py-0.5 rounded-full font-semibold mt-1
+            ${weekChangePct >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+            {weekChangePct >= 0 ? '+' : ''}{weekChangePct}% vs last week
           </span>
         </div>
 
@@ -163,7 +226,7 @@ export default function DashboardPage() {
         {/* Sales Chart */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-[15px] font-bold">📈 Sales Prediction vs Actual</div>
-          <div className="text-xs text-gray-500 mt-0.5 mb-3">AI-powered forecast for the current week</div>
+          <div className="text-xs text-gray-500 mt-0.5 mb-3">Actual daily sales vs. this week's trend line, based on real orders</div>
           <div className="relative h-[200px]">
             <canvas ref={canvasRef} />
           </div>
@@ -204,7 +267,7 @@ export default function DashboardPage() {
         {/* Best Customers */}
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-[15px] font-bold">🏆 Best Customers</div>
-          <div className="text-xs text-gray-500 mt-0.5 mb-3">Top buyers this month</div>
+          <div className="text-xs text-gray-500 mt-0.5 mb-3">Ranked by total amount paid</div>
           <table className="w-full text-[13px] border-collapse">
             <thead>
               <tr>
@@ -219,10 +282,10 @@ export default function DashboardPage() {
               {bestCustomers.map((c, i) => (
                 <tr key={c.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
                   <td className="px-2.5 py-2.5 text-gray-400 font-semibold">{i + 1}</td>
-                  <td className="px-2.5 py-2.5 font-medium">{c.name}</td>
-                  <td className="px-2.5 py-2.5 text-gray-500">{c.orders}</td>
+                  <td className="px-2.5 py-2.5 font-medium">{c.fullName}</td>
+                  <td className="px-2.5 py-2.5 text-gray-500">{c.ordersCount}</td>
                   <td className="px-2.5 py-2.5 font-semibold text-gray-700">
-                    ₱{c.orders * PRICE * 1.5}
+                    ₱{c.totalPaid}
                   </td>
                 </tr>
               ))}
@@ -253,7 +316,7 @@ export default function DashboardPage() {
                 return (
                   <tr key={o.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
                     <td className="px-2.5 py-2.5 font-medium">
-                      {customer ? (customer.name || customer.fullName) : '—'}
+                      {customer?.fullName || '—'}
                     </td>
                     <td className="px-2.5 py-2.5 text-gray-500">{o.quantity ?? o.gallons ?? '—'}</td>
                     <td className="px-2.5 py-2.5 font-semibold">₱{o.total ?? o.amount ?? '—'}</td>
