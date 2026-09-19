@@ -130,6 +130,15 @@ export async function apiUpdateUser(id, data) {
   });
   return res.json();
 }
+export async function apiCreateCheckout(data) {
+  const res = await fetch(`${BASE}/checkout`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.message || 'Failed to start checkout');
+  return result;
+}
 export async function apiGetNotifications(audience, userId) {
   const qs = audience === 'customer' ? `?audience=customer&userId=${userId}` : `?audience=admin`;
   const res = await fetch(`${BASE}/notifications${qs}`);
