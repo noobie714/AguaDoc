@@ -183,14 +183,14 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
                 title="Walk-in / Pickup"
                 subtitle="Free"
                 selected={orderType === 'walkin'}
-                onClick={() => { setOrderType('walkin'); setError(''); setPayMethod(''); setRefNumber(''); }}
+                onClick={() => { setOrderType('walkin'); setError(''); }}
               />
               <OrderTypeCard
                 emoji="🛵"
                 title="Delivery"
                 subtitle={`+ ₱${DELIVERY_FEE}.00`}
                 selected={orderType === 'delivery'}
-                onClick={() => { setOrderType('delivery'); setError(''); setPayMethod(''); setRefNumber(''); }}
+                onClick={() => { setOrderType('delivery'); setError(''); }}
               />
             </div>
 
