@@ -2,7 +2,6 @@
 import { useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Chart } from 'chart.js/auto';
-import { showToast } from '../components/ui/Toast';
 
 const HISTORY_DAYS = 14; // how many past days feed the trend line
 const FORECAST_DAYS = 7; // how many days ahead we project
@@ -73,9 +72,6 @@ export default function PredictionsPage() {
 
     return { actualDays, actualTotals, predictedTotals, predToday, predWeek, predMonth };
   }, [state.orders]);
-
-  // Pending deliveries for route (replaces renderRoute())
-  const deliveries = state.orders.filter(o => o.status === 'Pending' && o.type === 'Delivery');
 
   // Debt risk per customer (replaces riskTable logic)
   const riskData = state.customers.map(c => {
@@ -164,85 +160,38 @@ export default function PredictionsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3.5">
-
-        {/* Debt Risk Table */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="text-[15px] font-bold">⚠ Debt Risk Prediction</div>
-          <div className="text-xs text-gray-500 mt-0.5 mb-3">Customers likely to default on payment</div>
-          <table className="w-full text-[13px] border-collapse">
-            <thead>
-              <tr>
-                {['Customer','Balance','Risk Score','Risk Level'].map(h => (
-                  <th key={h} className="text-left px-2 py-1.5 text-[11.5px] font-semibold text-gray-500 border-b-2 border-gray-100">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {riskData.map(c => (
-                <tr key={c.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
-                  <td className="px-2 py-2.5 font-medium">{c.name}</td>
-                  <td className={`px-2 py-2.5 font-bold ${c.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>₱{c.balance}</td>
-                  <td className="px-2 py-2.5">
-                    <div className="rounded h-1.5 w-full mb-0.5" style={{ background: c.bgColor }}>
-                      <div className="h-1.5 rounded" style={{ width: `${c.score}%`, background: c.barColor }} />
-                    </div>
-                    <small className="text-gray-400 text-[11px]">{c.score}%</small>
-                  </td>
-                  <td className="px-2 py-2.5">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${c.badgeStyle}`}>{c.risk}</span>
-                  </td>
-                </tr>
+      {/* Debt Risk Table */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="text-[15px] font-bold">⚠ Debt Risk Prediction</div>
+        <div className="text-xs text-gray-500 mt-0.5 mb-3">Customers likely to default on payment</div>
+        <table className="w-full text-[13px] border-collapse">
+          <thead>
+            <tr>
+              {['Customer','Balance','Risk Score','Risk Level'].map(h => (
+                <th key={h} className="text-left px-2 py-1.5 text-[11.5px] font-semibold text-gray-500 border-b-2 border-gray-100">{h}</th>
               ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Smart Delivery Routing */}
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <div className="text-[15px] font-bold">🚗 Smart Delivery Routing</div>
-              <div className="text-xs text-gray-500 mt-0.5">Optimized route for pending deliveries</div>
-            </div>
-            <button
-              onClick={() => showToast('🔄 Route re-optimized!')}
-              className="border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition cursor-pointer"
-            >
-              🔄 Re-optimize
-            </button>
-          </div>
-
-          {deliveries.length === 0 ? (
-            <div className="text-center text-gray-400 text-xs py-6">No pending deliveries today.</div>
-          ) : deliveries.map((o, i) => {
-            const id = o.userId || o.custId;
-            const customer =
-              (state.users     || []).find(u => String(u.id) === String(id)) ||
-              (state.customers || []).find(c => String(c.id) === String(id));
-            const name    = customer?.name || customer?.fullName || '—';
-            const address = customer?.addr || customer?.address || 'N/A';
-            const gallons = o.quantity ?? o.gallons ?? '—';
-            return (
-              <div key={o.id} className="flex items-center gap-2.5 px-3 py-2 bg-gray-50 rounded-lg mb-2">
-                <div className="w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {i + 1}
-                </div>
-                <div>
-                  <div className="text-[13.5px] font-semibold">{name} ({gallons} gal)</div>
-                  <div className="text-xs text-gray-500">📍 {address}</div>
-                </div>
-              </div>
-            );
-          })}
-
-          <div className="mt-3 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2.5 text-[13px]">
-            <strong>Est. Distance:</strong> 8.4 km &nbsp;|&nbsp;
-            <strong>Est. Time:</strong> 45 mins
-          </div>
-        </div>
-
+            </tr>
+          </thead>
+          <tbody>
+            {riskData.map(c => (
+              <tr key={c.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
+                <td className="px-2 py-2.5 font-medium">{c.fullName}</td>
+                <td className={`px-2 py-2.5 font-bold ${c.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>₱{c.balance}</td>
+                <td className="px-2 py-2.5">
+                  <div className="rounded h-1.5 w-full mb-0.5" style={{ background: c.bgColor }}>
+                    <div className="h-1.5 rounded" style={{ width: `${c.score}%`, background: c.barColor }} />
+                  </div>
+                  <small className="text-gray-400 text-[11px]">{c.score}%</small>
+                </td>
+                <td className="px-2 py-2.5">
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${c.badgeStyle}`}>{c.risk}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+
     </div>
   );
 }
