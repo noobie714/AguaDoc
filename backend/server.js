@@ -113,7 +113,8 @@ async function checkUnpaidBalances() {
 // Docs: https://docs.xendit.co/docs/payment-sessions-overview
 const XENDIT_SECRET_KEY     = process.env.XENDIT_SECRET_KEY;
 const XENDIT_WEBHOOK_TOKEN  = process.env.XENDIT_WEBHOOK_TOKEN; // exact string, from Dashboard → Settings → Webhooks
-const FRONTEND_URL          = process.env.FRONTEND_URL || 'http://localhost:5173';
+const FRONTEND_URL          = process.env.FRONTEND_URL || 'http://localhost:5173'; // your local Vite dev server — never needs to be HTTPS
+const BACKEND_PUBLIC_URL    = process.env.BACKEND_PUBLIC_URL; // your ngrok HTTPS URL for this backend (e.g. https://xxxx.ngrok-free.dev)
 
 async function xenditRequest(path, body) {
   const res = await fetch(`https://api.xendit.co${path}`, {
@@ -141,6 +142,14 @@ function verifyXenditWebhook(headerToken) {
 // ====================== ROUTES ======================
 
 app.get('/api', (req, res) => res.json({ message: '✅ AguaDoc Backend is running!' }));
+
+// Xendit redirects the customer's browser here after payment (this URL must be public/HTTPS,
+// which is why it points at this tunneled backend). We just bounce them back to your real,
+// local frontend — this route does nothing but forward the query params along.
+app.get('/return', (req, res) => {
+  const { checkout, orderId } = req.query;
+  res.redirect(`${FRONTEND_URL}/?checkout=${checkout}&orderId=${orderId}`);
+});
 
 // ── AUTH ──
 app.post('/api/register', async (req, res) => {
@@ -456,8 +465,8 @@ app.post('/api/checkout', async (req, res) => {
         email: user?.email || undefined,
         individual_detail: { given_names: user?.fullName || 'Customer' },
       },
-      success_return_url: `${FRONTEND_URL}/?checkout=success&orderId=${newId}`,
-      cancel_return_url:  `${FRONTEND_URL}/?checkout=cancel&orderId=${newId}`,
+      success_return_url: `${BACKEND_PUBLIC_URL}/return?checkout=success&orderId=${newId}`,
+      cancel_return_url:  `${BACKEND_PUBLIC_URL}/return?checkout=cancel&orderId=${newId}`,
     });
 
     await pool.query('UPDATE orders SET checkoutSessionId = ? WHERE id = ?', [session.payment_session_id, newId]);
