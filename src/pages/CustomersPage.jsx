@@ -113,9 +113,9 @@ export default function CustomersPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 max-h-[520px] overflow-y-auto">
         <table className="w-full text-[13px] border-collapse">
-          <thead>
+          <thead className="sticky top-0 bg-white z-10">
             <tr>
               {['Name', 'Phone', 'Address', 'Balance', 'Orders', 'Actions'].map(h => (
                 <th key={h} className="text-left px-3 py-2.5 text-[11.5px] font-semibold text-gray-500 border-b-2 border-gray-200">

@@ -184,8 +184,9 @@ export default function ReportsPage() {
         <div className="text-[11.5px] font-bold text-gray-500 uppercase tracking-wide mb-2">
           Customer Transaction History
         </div>
+        <div className="max-h-[360px] overflow-y-auto border border-gray-100 rounded-lg">
         <table className="w-full text-[13px] border-collapse">
-          <thead>
+          <thead className="sticky top-0 bg-white z-10">
             <tr>
               {['Customer', 'Order ID', 'Gallons', 'Amount', 'Payment', 'Date', 'Status'].map(h => (
                 <th key={h} className="text-left px-2.5 py-2 text-[11.5px] font-semibold text-gray-500 border-b-2 border-gray-200 whitespace-nowrap">
@@ -230,6 +231,7 @@ export default function ReportsPage() {
             })}
           </tbody>
         </table>
+        </div>
 
       </div>
     </div>

@@ -114,7 +114,8 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
             {unpaidCustomers.length === 0 ? (
               <div className="text-center text-gray-400 text-xs py-4">No unpaid balances 🎉</div>
             ) : (
-              unpaidCustomers.map(c => (
+              <div className="max-h-[360px] overflow-y-auto pr-1">
+              {unpaidCustomers.map(c => (
                 <div key={c.id} className="flex justify-between items-center bg-gray-50 rounded-lg px-3 py-2.5 mb-2">
                   <div>
                     <div className="text-[13.5px] font-semibold">{c.fullName}</div>
@@ -122,7 +123,8 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
                   </div>
                   <div className="text-base font-black text-red-600">₱{c.balance}</div>
                 </div>
-              ))
+              ))}
+              </div>
             )}
           </div>
 
@@ -134,8 +136,9 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
               </div>
               <span className="text-accent text-[11px]">{state.payments.length} records</span>
             </div>
+            <div className="max-h-[360px] overflow-y-auto border border-gray-100 rounded-lg">
             <table className="w-full text-[13px] border-collapse">
-              <thead>
+              <thead className="sticky top-0 bg-white z-10">
                 <tr>
                   {['Customer', 'Method', 'Amount', 'Date', ''].map((h, i) => (
                     <th key={i} className="text-left px-2 py-1.5 text-[11.5px] font-semibold text-gray-500 border-b-2 border-gray-100">
@@ -149,7 +152,7 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
                const customer =
                (state.customers || []).find(c => String(c.id) === String(p.custId)) ||
                (state.users     || []).find(u => String(u.id) === String(p.custId));
-               const custName = customer?.name ?? customer?.fullName ?? '?';
+               const custName = customer?.fullName ?? '?';
             return (
                <tr key={p.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
                 <td className="px-2 py-2.5 font-medium">{custName}</td>
@@ -173,6 +176,7 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
         </div>

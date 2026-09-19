@@ -165,8 +165,9 @@ export default function OrdersPage() {
         </div>
 
         {/* Orders Table */}
+        <div className="max-h-[500px] overflow-y-auto border border-gray-100 rounded-lg">
         <table className="w-full text-[13px] border-collapse">
-          <thead>
+          <thead className="sticky top-0 bg-white z-10">
             <tr>
               {['Order ID', 'Customer', 'Type', 'Gallons', 'Amount', 'Payment', 'Date', 'Status', 'Actions'].map(h => (
                 <th key={h} className="text-left px-2.5 py-2 text-[11.5px] font-semibold text-gray-500 border-b-2 border-gray-200 whitespace-nowrap">
@@ -248,6 +249,7 @@ export default function OrdersPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* ── New Order Modal ── */}

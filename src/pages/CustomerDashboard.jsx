@@ -365,7 +365,8 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
                   </button>
                 </div>
               ) : (
-                [...orders].reverse().map(order => {
+                <div className="max-h-[600px] overflow-y-auto space-y-4 pr-1">
+                {[...orders].reverse().map(order => {
                   const isWalkin = order.type === 'Walk-in / Pickup';
 
                   // Define steps based on order type
@@ -468,7 +469,8 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
                       )}
                     </div>
                   );
-                })
+                })}
+                </div>
               )}
             </div>
           )}
