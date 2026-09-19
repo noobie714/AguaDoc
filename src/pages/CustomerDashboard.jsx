@@ -24,6 +24,7 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [showNotifs, setShowNotifs]        = useState(false);
+  const [checkoutBanner, setCheckoutBanner] = useState(null); // { type: 'success'|'cancel', text }
 
   // Edit Profile state
   const [profileForm, setProfileForm] = useState({
@@ -40,6 +41,22 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
     apiGetOrders(user.id)
       .then(data => { setOrders(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
+  }, [user.id]);
+
+  // Handle the return trip from Xendit's hosted checkout page.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get('checkout');
+    if (!checkout) return;
+
+    setCheckoutBanner(
+      checkout === 'success'
+        ? { type: 'success', text: 'Payment received! Your delivery order is confirmed.' }
+        : { type: 'cancel',  text: 'Payment was not completed. Your order was not placed — feel free to try again.' }
+    );
+    setActive('orders'); // jump to where they can see the result
+    window.history.replaceState({}, '', window.location.pathname); // clean the URL
+    apiGetOrders(user.id).then(data => setOrders(Array.isArray(data) ? data : [])); // pick up the now-paid order
   }, [user.id]);
 
   useEffect(() => {
@@ -217,6 +234,14 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6 space-y-5">
+
+          {checkoutBanner && (
+            <div className={`rounded-xl px-4 py-3 text-sm font-medium flex items-center justify-between
+              ${checkoutBanner.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-yellow-50 text-yellow-700 border border-yellow-200'}`}>
+              <span>{checkoutBanner.type === 'success' ? '✅' : '⚠️'} {checkoutBanner.text}</span>
+              <button onClick={() => setCheckoutBanner(null)} className="text-xs underline opacity-70 hover:opacity-100">Dismiss</button>
+            </div>
+          )}
 
           {/* ── Request Service Page ── */}
           {active === 'request' && (

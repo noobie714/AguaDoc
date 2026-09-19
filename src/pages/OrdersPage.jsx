@@ -168,7 +168,7 @@ export default function OrdersPage() {
         <table className="w-full text-[13px] border-collapse">
           <thead>
             <tr>
-              {['Order ID', 'Customer', 'Type', 'Gallons', 'Amount', 'Date', 'Status', 'Actions'].map(h => (
+              {['Order ID', 'Customer', 'Type', 'Gallons', 'Amount', 'Payment', 'Date', 'Status', 'Actions'].map(h => (
                 <th key={h} className="text-left px-2.5 py-2 text-[11.5px] font-semibold text-gray-500 border-b-2 border-gray-200 whitespace-nowrap">
                   {h}
                 </th>
@@ -177,7 +177,7 @@ export default function OrdersPage() {
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-6 text-gray-400 text-xs">No orders found.</td></tr>
+              <tr><td colSpan={9} className="text-center py-6 text-gray-400 text-xs">No orders found.</td></tr>
             ) : (
               filtered.map(o => (
                 <tr key={o.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0">
@@ -192,6 +192,21 @@ export default function OrdersPage() {
                   </td>
                   <td className="px-2.5 py-2.5 text-gray-600">{o.quantity ?? o.gallons ?? '—'}</td>
                   <td className="px-2.5 py-2.5 font-semibold">₱{o.total ?? o.amount ?? '—'}</td>
+                  <td className="px-2.5 py-2.5">
+                    {o.paymentStatus === 'paid' ? (
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold bg-green-100 text-green-800">
+                        ✔ Paid (Xendit)
+                      </span>
+                    ) : o.checkoutSessionId ? (
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold bg-yellow-100 text-yellow-800">
+                        ⏳ Awaiting payment
+                      </span>
+                    ) : (
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-[11.5px] font-semibold bg-gray-100 text-gray-500">
+                        Pay on arrival
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2.5 py-2.5 text-gray-500">
                     {o.date ? new Date(o.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                   </td>

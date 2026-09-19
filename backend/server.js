@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const mysql   = require('mysql2/promise');
@@ -106,6 +107,35 @@ async function checkUnpaidBalances() {
   } catch (err) {
     console.warn('Unpaid-balance check failed:', err.message);
   }
+}
+
+// ── Xendit (Payment Sessions API — the current recommended integration, not the legacy /v2/invoices) ──
+// Docs: https://docs.xendit.co/docs/payment-sessions-overview
+const XENDIT_SECRET_KEY     = process.env.XENDIT_SECRET_KEY;
+const XENDIT_WEBHOOK_TOKEN  = process.env.XENDIT_WEBHOOK_TOKEN; // exact string, from Dashboard → Settings → Webhooks
+const FRONTEND_URL          = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+async function xenditRequest(path, body) {
+  const res = await fetch(`https://api.xendit.co${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // Xendit uses HTTP Basic auth: secret key as the username, blank password.
+      'Authorization': 'Basic ' + Buffer.from(`${XENDIT_SECRET_KEY}:`).toString('base64'),
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'Xendit request failed');
+  return data;
+}
+
+// Xendit signs webhooks with a fixed verification token in the x-callback-token header —
+// a plain (constant-time) string compare against your Dashboard token, no HMAC needed.
+function verifyXenditWebhook(headerToken) {
+  const crypto = require('crypto');
+  if (!headerToken || headerToken.length !== XENDIT_WEBHOOK_TOKEN.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(headerToken), Buffer.from(XENDIT_WEBHOOK_TOKEN));
 }
 
 // ====================== ROUTES ======================
@@ -389,6 +419,82 @@ app.get('/api/delivery-route', async (req, res) => {
       geometry: trip.trips[0].geometry.coordinates, // array of [lng, lat]
     });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── XENDIT CHECKOUT ──
+// Creates the order (unpaid) then a hosted Xendit Payment Session for it.
+// The order is only marked "paid" later, by the webhook below — never by this endpoint,
+// since a customer reaching the success page proves nothing on its own.
+app.post('/api/checkout', async (req, res) => {
+  try {
+    const { userId, type, quantity, priority, address, notes, total } = req.body;
+    const newId  = id();
+    const newRef = 'ORD-' + newId.slice(-6);
+    const { lat, lng } = await geocodeAddress(address);
+
+    await pool.query(
+      `INSERT INTO orders (id, ref, userId, type, quantity, status, total, address, priority, notes, lat, lng, paymentStatus)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'unpaid')`,
+      [newId, newRef, userId, type, quantity || 1, 'Pending', total || 0, address || '', priority || 'normal', notes || '', lat, lng]
+    );
+
+    const [[user]] = await pool.query('SELECT fullName, email FROM users WHERE id = ?', [userId]);
+
+    const session = await xenditRequest('/sessions', {
+      reference_id: newId, // carried straight through to the webhook — used to find this order again
+      session_type: 'PAY',
+      mode: 'PAYMENT_LINK',
+      currency: 'PHP',
+      amount: total,
+      country: 'PH',
+      description: `AguaDoc — ${type} (${quantity} gal)`,
+      customer: {
+        reference_id: userId,
+        type: 'INDIVIDUAL',
+        email: user?.email || undefined,
+        individual_detail: { given_names: user?.fullName || 'Customer' },
+      },
+      success_return_url: `${FRONTEND_URL}/?checkout=success&orderId=${newId}`,
+      cancel_return_url:  `${FRONTEND_URL}/?checkout=cancel&orderId=${newId}`,
+    });
+
+    await pool.query('UPDATE orders SET checkoutSessionId = ? WHERE id = ?', [session.payment_session_id, newId]);
+
+    res.json({ orderId: newId, checkoutUrl: session.payment_link_url });
+  } catch (err) {
+    console.error('Checkout creation failed:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Xendit calls this when a payment session is actually completed. This — not the customer's
+// browser redirect — is the real source of truth for whether money changed hands.
+app.post('/api/webhooks/xendit', async (req, res) => {
+  try {
+    if (!verifyXenditWebhook(req.headers['x-callback-token'])) {
+      console.warn('Rejected webhook: bad or missing callback token');
+      return res.status(401).json({ success: false, message: 'Invalid callback token' });
+    }
+
+    const { event, data } = req.body;
+    if (event === 'payment_session.completed' && data?.status === 'COMPLETED') {
+      const orderId = data.reference_id; // the order id we set at session creation
+      if (orderId) {
+        await pool.query("UPDATE orders SET paymentStatus = 'paid' WHERE id = ?", [orderId]);
+        const [[order]] = await pool.query('SELECT ref FROM orders WHERE id = ?', [orderId]);
+        await createNotification({
+          audience: 'admin',
+          message: `Payment confirmed via Xendit for order ${order?.ref || orderId}.`,
+          type: 'Payment',
+        });
+      }
+    }
+
+    res.status(200).json({ received: true });
+  } catch (err) {
+    console.error('Webhook handling failed:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });

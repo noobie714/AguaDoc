@@ -1,8 +1,6 @@
 // src/pages/RequestServicePage.jsx
 import { useState } from 'react';
-import gcashQR from '../assets/gcash-qr.png';
-import mayaQR from '../assets/maya-qr.png';
-import { apiAddOrder, apiAddPayment } from '../api';
+import { apiAddOrder, apiCreateCheckout } from '../api';
 
 const PRICE_PER_GALLON = 40;
 const DELIVERY_FEE     = 20;
@@ -76,8 +74,6 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
   const [quantity,  setQuantity]  = useState(1);
   const [address,   setAddress]   = useState(user?.address || '');
   const [notes,     setNotes]     = useState('');
-  const [payMethod, setPayMethod] = useState('');
-  const [refNumber, setRefNumber] = useState('');
   const [loading,   setLoading]   = useState(false);
   const [success,   setSuccess]   = useState(false);
   const [error,     setError]     = useState('');
@@ -97,36 +93,21 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
   }
   function goBack() { setError(''); setStep(s => s - 1); }
 
-  // ── Submit ──
-  async function handleConfirm() {
-  if (isDelivery && !payMethod) { setError('Please select a payment method.'); return; }
-  if (isDelivery && (payMethod === 'gcash' || payMethod === 'maya') && !refNumber.trim()) {
-    setError('Please enter your reference number.'); return;
-  }
+  // ── Walk-in: pay on arrival, no gateway involved ──
+  async function handleConfirmWalkin() {
   setLoading(true);
   try {
-    const order = await apiAddOrder({
+    await apiAddOrder({
       userId:      user.id,
-      type:        isWalkin ? 'Walk-in / Pickup' : 'Delivery',
+      type:        'Walk-in / Pickup',
       priority,
       quantity,
-      address:     isDelivery ? address : 'Walk-in',
+      address:     'Walk-in',
       notes,
-      payMethod:   isWalkin ? 'Pay on arrival' : payMethod,
-      refNumber:   isWalkin ? '' : refNumber,
+      payMethod:   'Pay on arrival',
       total,
       status:      'Pending',
     });
-
-    if (payMethod === 'gcash' || payMethod === 'maya') {
-      await apiAddPayment({
-        custId:  user.id,
-        orderId: order.id,
-        amount:  total,
-        method:  payMethod === 'gcash' ? 'GCash' : 'Maya',
-      });
-    }
-
     setSuccess(true);
     onOrderPlaced?.();
   } catch {
@@ -136,25 +117,43 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
   }
 }
 
-  // ── Success screen ──
+  // ── Delivery: real GCash/Maya payment via Xendit — leaves this page entirely ──
+  async function handlePayNow() {
+  setLoading(true);
+  setError('');
+  try {
+    const { checkoutUrl } = await apiCreateCheckout({
+      userId:   user.id,
+      type:     'Delivery',
+      priority,
+      quantity,
+      address,
+      notes,
+      total,
+    });
+    window.location.href = checkoutUrl; // hand off to Xendit's hosted payment page
+  } catch {
+    setError('Could not start payment. Please try again.');
+    setLoading(false);
+  }
+}
+
+  // ── Success screen (walk-in only — delivery success is shown after returning from Xendit) ──
   if (success) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-4xl mb-4">✅</div>
         <h2 className="text-xl font-bold text-[#0f172a] mb-2">Order Placed!</h2>
         <p className="text-gray-500 text-sm mb-6">
-          {isWalkin
-            ? 'Your walk-in order has been received. Please pay when you arrive.'
-            : 'Your delivery order has been received. We\'ll notify you once it\'s ready.'}
+          Your walk-in order has been received. Please pay when you arrive.
         </p>
         <div className="bg-white rounded-2xl shadow-sm px-8 py-5 text-sm text-left space-y-2 min-w-[260px] mb-6">
-          <div className="flex justify-between"><span className="text-gray-400">Type</span><span className="font-semibold">{isWalkin ? 'Walk-in / Pickup' : 'Delivery'}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Type</span><span className="font-semibold">Walk-in / Pickup</span></div>
           <div className="flex justify-between"><span className="text-gray-400">Gallons</span><span className="font-semibold">{quantity}</span></div>
           <div className="flex justify-between"><span className="text-gray-400">Total</span><span className="font-bold text-[#0ea5c9]">₱{total.toFixed(2)}</span></div>
-          {isDelivery && <div className="flex justify-between"><span className="text-gray-400">Payment</span><span className="font-semibold capitalize">{payMethod}</span></div>}
         </div>
         <button
-          onClick={() => { setSuccess(false); setStep(1); setOrderType(''); setPriority('normal'); setQuantity(1); setAddress(user?.address || ''); setNotes(''); setPayMethod(''); setRefNumber(''); }}
+          onClick={() => { setSuccess(false); setStep(1); setOrderType(''); setPriority('normal'); setQuantity(1); setAddress(user?.address || ''); setNotes(''); }}
           className="bg-[#0ea5c9] hover:bg-[#0284a8] text-white font-semibold px-8 py-3 rounded-xl transition text-sm"
         >
           Place Another Order
@@ -305,7 +304,7 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
                 ← Back
               </button>
               {isWalkin ? (
-                <button onClick={handleConfirm} disabled={loading}
+                <button onClick={handleConfirmWalkin} disabled={loading}
                   className="bg-[#0ea5c9] hover:bg-[#0284a8] text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition disabled:opacity-60">
                   {loading ? 'Placing...' : '✅ Confirm Order'}
                 </button>
@@ -345,48 +344,14 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
               </div>
             </div>
 
-            {/* Payment method */}
+            {/* Payment */}
             <div className="mb-4">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Select Payment Method</p>
-              <div className="flex gap-3 mb-4">
-                {/* GCash */}
-                <button
-                  onClick={() => setPayMethod('gcash')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition cursor-pointer
-                    ${payMethod === 'gcash' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 bg-white text-gray-500 hover:border-blue-300'}`}
-                >
-                  <span className="text-lg">💙</span> GCash
-                </button>
-                {/* Maya */}
-                <button
-                  onClick={() => setPayMethod('maya')}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-bold text-sm transition cursor-pointer
-                    ${payMethod === 'maya' ? 'border-green-500 bg-green-50 text-green-600' : 'border-gray-200 bg-white text-gray-500 hover:border-green-300'}`}
-                >
-                  <span className="text-lg">💚</span> Maya
-                </button>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Payment</p>
+              <div className="bg-gray-50 rounded-xl p-4 text-center">
+                <p className="text-sm text-gray-500 mb-1">You'll be taken to a secure Xendit page to pay via</p>
+                <p className="text-sm font-bold text-[#0f172a] mb-3">💙 GCash &nbsp; or &nbsp; 💚 Maya</p>
+                <p className="text-xs text-gray-400">Your order is only confirmed once payment actually goes through — no manual reference number needed.</p>
               </div>
-
-              {/* QR + ref input */}
-              {(payMethod === 'gcash' || payMethod === 'maya') && (
-                <div className="bg-gray-50 rounded-xl p-4 text-center">
-                  <p className="text-xs text-gray-400 mb-3">
-                    Scan the QR code below to pay via <span className="font-semibold capitalize">{payMethod}</span>
-                  </p>
-                  <img
-                    src={payMethod === 'gcash' ? gcashQR : mayaQR}
-                    alt={`${payMethod === 'gcash' ? 'GCash' : 'Maya'} QR code`}
-                    className="w-28 h-28 mx-auto rounded-xl border border-gray-200 mb-3 object-contain bg-white"
-                  />
-                  <p className="text-xs text-gray-400 mb-2">After paying, enter your reference number:</p>
-                  <input
-                    value={refNumber}
-                    onChange={e => setRefNumber(e.target.value)}
-                    placeholder={`Enter ${payMethod === 'gcash' ? 'GCash' : 'Maya'} Reference Number`}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm outline-none focus:border-[#0ea5c9] text-center"
-                  />
-                </div>
-              )}
             </div>
 
             {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
@@ -396,9 +361,9 @@ export default function RequestServicePage({ user, onOrderPlaced }) {
                 className="border border-gray-200 text-gray-600 font-semibold px-5 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
                 ← Back
               </button>
-              <button onClick={handleConfirm} disabled={loading}
+              <button onClick={handlePayNow} disabled={loading}
                 className="bg-[#0ea5c9] hover:bg-[#0284a8] text-white font-semibold px-6 py-2.5 rounded-xl text-sm transition disabled:opacity-60">
-                {loading ? 'Placing...' : '✅ Confirm Payment'}
+                {loading ? 'Redirecting...' : '💳 Pay Now'}
               </button>
             </div>
           </div>
