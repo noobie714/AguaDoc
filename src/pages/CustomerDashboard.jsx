@@ -1,7 +1,28 @@
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, ShoppingCart, CreditCard, LogOut, Bell, User } from 'lucide-react';
-import { apiGetOrders, apiUpdateUser, apiGetNotifications, apiMarkNotificationRead, apiMarkAllNotificationsRead } from '../api';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { apiGetOrders, apiUpdateUser, apiGetNotifications, apiMarkNotificationRead, apiMarkAllNotificationsRead, apiGetRiderLocation } from '../api';
 import RequestServicePage from './RequestServicePage';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+const riderIcon = L.divIcon({
+  className: 'aguadoc-rider-marker',
+  html: `<div style="background:#16a34a;color:white;font-size:15px;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.5);">🛵</div>`,
+  iconSize: [30, 30], iconAnchor: [15, 15],
+});
+const homeIcon = L.divIcon({
+  className: 'aguadoc-home-marker',
+  html: `<div style="background:#0ea5c9;color:white;font-size:15px;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.5);">🏠</div>`,
+  iconSize: [30, 30], iconAnchor: [15, 15],
+});
+const RIDER_STALE_MS = 2 * 60 * 1000;
 
 const NAV = [
   { icon: LayoutDashboard, label: 'Dashboard',       id: 'dashboard' },
@@ -25,6 +46,8 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
   const [notifications, setNotifications] = useState([]);
   const [showNotifs, setShowNotifs]        = useState(false);
   const [checkoutBanner, setCheckoutBanner] = useState(null); // { type: 'success'|'cancel', text }
+  const [trackingOrderId, setTrackingOrderId] = useState(null); // which order's live map is expanded
+  const [rider, setRider] = useState(null); // { lat, lng, updatedAt } | null
 
   // Edit Profile state
   const [profileForm, setProfileForm] = useState({
@@ -69,6 +92,15 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
     const interval = setInterval(loadNotifs, 15000); // check every 15s for new ones
     return () => clearInterval(interval);
   }, [user.id]);
+
+  // Only poll the rider's live position while a delivery is actually being tracked.
+  useEffect(() => {
+    if (!trackingOrderId) return;
+    const loadRider = () => apiGetRiderLocation().then(setRider).catch(() => {});
+    loadRider();
+    const interval = setInterval(loadRider, 5000);
+    return () => clearInterval(interval);
+  }, [trackingOrderId]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -151,8 +183,8 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
   return (
     <div className="flex h-screen bg-[#f0f6fb] overflow-hidden">
 
-      {/* Sidebar */}
-      <aside className="w-52 bg-[#0f2a4a] flex flex-col py-6 px-4 shrink-0">
+      {/* Sidebar (desktop/tablet only — mobile uses the bottom nav bar instead) */}
+      <aside className="hidden md:flex w-52 bg-[#0f2a4a] flex-col py-6 px-4 shrink-0">
         <div className="flex items-center gap-2 mb-10 px-1">
           <div className="w-8 h-8 bg-[#0ea5c9] rounded-lg flex items-center justify-center">
             <span className="text-white text-sm">💧</span>
@@ -182,14 +214,14 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
       <div className="flex-1 flex flex-col overflow-hidden">
 
         {/* Topbar */}
-        <header className="relative bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-4">
-          <div className="flex items-center gap-2 flex-1 bg-gray-50 rounded-xl px-4 py-2 max-w-sm">
-            <span className="text-gray-400 text-sm">🔍</span>
-            <input placeholder="Search orders..." className="bg-transparent text-sm outline-none flex-1 text-gray-500" />
+        <header className="relative bg-white border-b border-gray-100 px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 flex-1 bg-gray-50 rounded-xl px-3 sm:px-4 py-2 min-w-0 sm:max-w-sm">
+            <span className="text-gray-400 text-sm shrink-0">🔍</span>
+            <input placeholder="Search orders..." className="bg-transparent text-sm outline-none flex-1 min-w-0 text-gray-500" />
           </div>
           <button
             onClick={() => setShowNotifs(v => !v)}
-            className="relative ml-auto text-gray-400 hover:text-gray-600"
+            className="relative text-gray-400 hover:text-gray-600 shrink-0"
           >
             <Bell size={20} />
             {unreadCount > 0 && (
@@ -198,12 +230,19 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
               </span>
             )}
           </button>
+          {/* Sidebar is hidden on mobile, so its Sign Out button needs a stand-in here */}
+          <button
+            onClick={onLogout}
+            className="md:hidden shrink-0 text-gray-400 hover:text-red-500"
+          >
+            <LogOut size={20} />
+          </button>
 
           {showNotifs && (
             <>
               {/* click-away backdrop */}
               <div className="fixed inset-0 z-10" onClick={() => setShowNotifs(false)} />
-              <div className="absolute right-6 top-14 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+              <div className="absolute right-3 sm:right-6 top-14 w-[90vw] max-w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
                   <span className="text-[13px] font-bold">Notifications</span>
                   {unreadCount > 0 && (
@@ -233,7 +272,7 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto p-6 space-y-5">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 pb-24 md:pb-6">
 
           {checkoutBanner && (
             <div className={`rounded-xl px-4 py-3 text-sm font-medium flex items-center justify-between
@@ -258,28 +297,29 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
           {active === 'dashboard' && (
             <>
               {/* Welcome banner */}
-              <div className="bg-[#0f2a4a] rounded-2xl px-6 py-5 flex items-center justify-between">
+              <div className="bg-[#0f2a4a] rounded-2xl px-5 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                   <h2 className="text-white text-lg font-semibold">Good day, {firstName}! 👋</h2>
                   <p className="text-gray-400 text-sm mt-0.5">Here's a summary of your interactions and orders.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-[#0ea5c9] flex items-center justify-center text-white font-bold text-sm">
+                  <div className="w-9 h-9 rounded-full bg-[#0ea5c9] flex items-center justify-center text-white font-bold text-sm shrink-0">
                     {initials}
                   </div>
-                  <div className="text-sm">
-                    <p className="text-white font-medium">{user?.username || user?.fullName}</p>
-                    <p className="text-gray-400 text-xs">{user?.email}</p>
+                  <div className="text-sm min-w-0">
+                    <p className="text-white font-medium truncate">{user?.username || user?.fullName}</p>
+                    <p className="text-gray-400 text-xs truncate">{user?.email}</p>
                   </div>
+                  {/* Hidden on mobile — the header already has a Sign Out icon there */}
                   <button onClick={onLogout}
-                    className="flex items-center gap-1.5 text-gray-300 hover:text-white text-sm ml-4 border border-white/20 rounded-lg px-3 py-1.5 transition">
+                    className="hidden sm:flex items-center gap-1.5 text-gray-300 hover:text-white text-sm ml-4 border border-white/20 rounded-lg px-3 py-1.5 transition shrink-0">
                     <LogOut size={14} /> Sign Out
                   </button>
                 </div>
               </div>
 
               {/* Stats */}
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                 {STATS.map(({ emoji, label, key }) => (
                   <div key={key} className="bg-white rounded-2xl px-5 py-5 shadow-sm">
                     <div className="text-2xl mb-3">{emoji}</div>
@@ -301,7 +341,8 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
                     View All
                   </button>
                 </div>
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[420px]">
                   <thead>
                     <tr className="text-gray-400 text-xs border-b border-gray-100">
                       <th className="text-left pb-2 font-semibold">REF #</th>
@@ -329,6 +370,7 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </>
           )}
@@ -467,6 +509,45 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
                           <span>{order.address}</span>
                         </div>
                       )}
+
+                      {/* Live delivery tracking — only offered once the order is actually out for delivery */}
+                      {!isWalkin && order.status === 'Processing' && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <button
+                            onClick={() => setTrackingOrderId(trackingOrderId === order.id ? null : order.id)}
+                            className="text-xs font-semibold text-[#0ea5c9] hover:underline"
+                          >
+                            {trackingOrderId === order.id ? '▲ Hide map' : '🛵 Track my delivery'}
+                          </button>
+
+                          {trackingOrderId === order.id && (
+                            (() => {
+                              const riderIsLive = rider?.lat != null && rider?.updatedAt &&
+                                (Date.now() - new Date(rider.updatedAt).getTime()) < RIDER_STALE_MS;
+                              const homePos = order.lat != null && order.lng != null ? [order.lat, order.lng] : null;
+                              const center = riderIsLive ? [rider.lat, rider.lng] : homePos || [10.3157, 123.9740];
+                              return (
+                                <div className="mt-2">
+                                  <div className="h-52 rounded-xl overflow-hidden border border-gray-200">
+                                    <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }}>
+                                      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                      {homePos && (
+                                        <Marker position={homePos} icon={homeIcon}><Popup>Your delivery address</Popup></Marker>
+                                      )}
+                                      {riderIsLive && (
+                                        <Marker position={[rider.lat, rider.lng]} icon={riderIcon}><Popup>Your rider</Popup></Marker>
+                                      )}
+                                    </MapContainer>
+                                  </div>
+                                  <p className="text-xs text-gray-400 mt-1.5 text-center">
+                                    {riderIsLive ? '📡 Live location' : 'Waiting for rider to start sharing their location...'}
+                                  </p>
+                                </div>
+                              );
+                            })()
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -562,7 +643,7 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-semibold text-gray-500">New Password</label>
                     <input
@@ -594,6 +675,21 @@ export default function CustomerDashboard({ user, onLogout, onUpdateUser }) {
             </div>
           )}
         </main>
+
+        {/* Bottom nav (mobile/tablet only — desktop uses the sidebar instead) */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex items-stretch z-30">
+          {NAV.map(({ icon: Icon, label, id }) => (
+            <button
+              key={id}
+              onClick={() => setActive(id)}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 text-[10px] font-medium
+                ${active === id ? 'text-[#0ea5c9]' : 'text-gray-400'}`}
+            >
+              <Icon size={18} />
+              <span className="leading-none text-center">{label.split(' ')[0]}</span>
+            </button>
+          ))}
+        </nav>
       </div>
     </div>
   );
