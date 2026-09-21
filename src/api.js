@@ -130,6 +130,17 @@ export async function apiUpdateUser(id, data) {
   });
   return res.json();
 }
+export async function apiGetRiderLocation() {
+  const res = await fetch(`${BASE}/rider-location`);
+  return res.json();
+}
+export async function apiPostRiderLocation(lat, lng) {
+  const res = await fetch(`${BASE}/rider-location`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lat, lng })
+  });
+  return res.json();
+}
 export async function apiCreateCheckout(data) {
   const res = await fetch(`${BASE}/checkout`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
