@@ -90,9 +90,16 @@ export default function DashboardPage() {
   if (pendingOrders > 0)
     alerts.push({ type: 'info',   msg: `${pendingOrders} pending order(s) need attention.` });
 
-  // ── Best customers — ranked by real money actually paid, not a fake formula ──
+  // ── Best customers — ranked by real money actually paid, across BOTH walk-ins (state.customers)
+  // and registered accounts (state.users) — not just one or the other. Deduplicated by id, since
+  // a linked account can technically appear in both. ──
   const bestCustomers = useMemo(() => {
-    return state.customers
+    const byId = new Map();
+    [...state.customers, ...state.users.filter(u => u.role === 'customer')].forEach(c => {
+      if (!byId.has(String(c.id))) byId.set(String(c.id), c);
+    });
+
+    return Array.from(byId.values())
       .map(c => {
         const ordersCount = state.orders.filter(o => String(o.custId ?? o.userId) === String(c.id)).length;
         const totalPaid   = state.payments
@@ -100,14 +107,13 @@ export default function DashboardPage() {
           .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
         return { ...c, ordersCount, totalPaid };
       })
+      .filter(c => c.ordersCount > 0 || c.totalPaid > 0) // hide accounts with zero activity
       .sort((a, b) => b.totalPaid - a.totalPaid)
       .slice(0, 4);
-  }, [state.customers, state.orders, state.payments]);
+  }, [state.customers, state.users, state.orders, state.payments]);
 
-  // ── Recent orders (replaces recentOrders table) ──
-  const recentOrders = [...state.orders]
-    .reverse()
-    .slice(0, 4);
+  // ── Recent orders — backend already returns newest-first, so just take the top 4 ──
+  const recentOrders = state.orders.slice(0, 4);
 
   // ── Chart: real actual sales for the last 7 days, vs. the trend line's fit for the same days ──
   useEffect(() => {
