@@ -8,6 +8,8 @@ import Modal from '../components/ui/Modal';
 import { showToast } from '../components/ui/Toast';
 import { apiAddCustomer, apiUpdateCustomer } from '../api';
 
+const PRICE_PER_GALLON = 40; // walk-ins pick up in person — no delivery fee added
+
 export default function CustomersPage() {
   const { state, dispatch } = useApp();
   const [showAddModal, setShowAddModal]   = useState(false);
@@ -15,7 +17,7 @@ export default function CustomersPage() {
   const [filter, setFilter]               = useState('All');
   const [saving, setSaving]               = useState(false);
   const [form, setForm]                   = useState({ name: '', phone: '', addr: '' });
-  const [editForm, setEditForm]           = useState({ name: '', phone: '', addr: '', balance: '' });
+  const [editForm, setEditForm]           = useState({ name: '', phone: '', addr: '', orders: '' });
 
   // Replaces filterCustomers()
   const filtered = state.customers.filter(c => {
@@ -36,7 +38,7 @@ export default function CustomersPage() {
         address: form.addr,
         balance: 0,
       });
-      dispatch({ type: 'ADD_CUSTOMER', payload: { ...saved, orders: 0 } });
+      dispatch({ type: 'ADD_CUSTOMER', payload: saved });
       showToast(`✅ ${form.name} added!`);
       setForm({ name: '', phone: '', addr: '' });
       setShowAddModal(false);
@@ -53,27 +55,30 @@ export default function CustomersPage() {
       name: c.fullName ?? '',
       phone: c.phone ?? '',
       addr: c.address ?? '',
-      balance: c.balance ?? 0,
+      orders: c.orders ?? 0,
     });
   }
 
-  // Saves name/phone/address/balance — this is how you manually adjust a customer's debt
-  // (e.g. add a new unpaid delivery amount, or correct it) outside of the Payments flow.
+  // Saves name/phone/address/orders — the balance is always derived from gallons taken on
+  // credit (orders × ₱40), never typed in directly, so it can't drift out of sync.
   async function handleSaveEdit() {
     if (!editForm.name || !editForm.phone || !editForm.addr) return alert('Please fill all fields.');
-    if (editForm.balance === '' || isNaN(editForm.balance) || Number(editForm.balance) < 0) {
-      return alert('Balance must be a valid number, 0 or more.');
+    if (editForm.orders === '' || isNaN(editForm.orders) || Number(editForm.orders) < 0) {
+      return alert('Orders (gallons) must be a valid number, 0 or more.');
     }
     setSaving(true);
     try {
+      const orders  = Number(editForm.orders);
+      const balance = orders * PRICE_PER_GALLON;
       const updated = await apiUpdateCustomer(editingCustomer.id, {
         fullName: editForm.name,
         email: editingCustomer.email || null,
         phone: editForm.phone,
         address: editForm.addr,
-        balance: Number(editForm.balance),
+        balance,
+        orders,
       });
-      dispatch({ type: 'UPDATE_CUSTOMER', payload: { ...updated, orders: editingCustomer.orders } });
+      dispatch({ type: 'UPDATE_CUSTOMER', payload: updated });
       showToast(`✅ ${editForm.name} updated!`);
       setEditingCustomer(null);
     } catch (err) {
@@ -235,18 +240,18 @@ export default function CustomersPage() {
               />
             </div>
             <div>
-              <label className="text-[12.5px] font-semibold text-gray-600">Balance (₱)</label>
+              <label className="text-[12.5px] font-semibold text-gray-600">Orders (gallons on credit)</label>
               <input
                 type="number"
                 min="0"
-                value={editForm.balance}
-                onChange={e => setEditForm({ ...editForm, balance: e.target.value })}
+                value={editForm.orders}
+                onChange={e => setEditForm({ ...editForm, orders: e.target.value })}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] mt-1"
                 placeholder="0"
               />
-              <p className="text-[11px] text-gray-400 mt-1">
-                Set this directly to add a new unpaid amount or correct an existing one.
-                Recording an actual payment on the Payments page will reduce this automatically instead.
+              <p className="text-[11px] text-gray-400 mt-1.5">
+                = ₱{(Number(editForm.orders) || 0) * PRICE_PER_GALLON} balance (₱{PRICE_PER_GALLON}/gallon, no delivery fee for walk-ins).
+                Recording an actual payment on the Payments page reduces this automatically instead.
               </p>
             </div>
           </div>

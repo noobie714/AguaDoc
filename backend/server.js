@@ -271,7 +271,7 @@ app.post('/api/customers', async (req, res) => {
     const { fullName, email, phone, address, balance } = req.body;
     const newId = id();
     await pool.query(
-      'INSERT INTO customers (id, fullName, email, phone, address, balance) VALUES (?,?,?,?,?,?)',
+      'INSERT INTO customers (id, fullName, email, phone, address, balance, orders) VALUES (?,?,?,?,?,?,0)',
       [newId, fullName, email || null, phone, address, balance || 0]
     );
     const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [newId]);
@@ -285,12 +285,12 @@ app.post('/api/customers', async (req, res) => {
 
 app.put('/api/customers/:id', async (req, res) => {
   try {
-    const { fullName, email, phone, address, balance } = req.body;
+    const { fullName, email, phone, address, balance, orders } = req.body;
     const [[before]] = await pool.query('SELECT balance FROM customers WHERE id = ?', [req.params.id]);
 
     await pool.query(
-      'UPDATE customers SET fullName=?, email=?, phone=?, address=?, balance=? WHERE id=?',
-      [fullName, email || null, phone, address, balance, req.params.id]
+      'UPDATE customers SET fullName=?, email=?, phone=?, address=?, balance=?, orders=? WHERE id=?',
+      [fullName, email || null, phone, address, balance, orders ?? 0, req.params.id]
     );
     const [rows] = await pool.query('SELECT * FROM customers WHERE id = ?', [req.params.id]);
 
