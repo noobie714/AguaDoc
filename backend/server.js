@@ -432,6 +432,28 @@ app.get('/api/delivery-route', async (req, res) => {
   }
 });
 
+// ── RIDER LOCATION (live tracking) — a single shared row, updated by whichever
+// rider currently has the tracker page open. Good enough for one active delivery run;
+// would need a per-rider id if you ever have multiple riders out at once. ──
+app.get('/api/rider-location', async (req, res) => {
+  try {
+    const [[row]] = await pool.query('SELECT lat, lng, updatedAt FROM rider_location WHERE id = "main"');
+    res.json(row || { lat: null, lng: null, updatedAt: null });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/rider-location', async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+    await pool.query('UPDATE rider_location SET lat = ?, lng = ?, updatedAt = NOW() WHERE id = "main"', [lat, lng]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── XENDIT CHECKOUT ──
 // Creates the order (unpaid) then a hosted Xendit Payment Session for it.
 // The order is only marked "paid" later, by the webhook below — never by this endpoint,
@@ -460,7 +482,7 @@ app.post('/api/checkout', async (req, res) => {
       country: 'PH',
       description: `AguaDoc — ${type} (${quantity} gal)`,
       customer: {
-        reference_id: userId,
+        reference_id: `${userId}-${newId}`, // unique per order — Xendit rejects reusing a customer reference_id
         type: 'INDIVIDUAL',
         email: user?.email || undefined,
         individual_detail: { given_names: user?.fullName || 'Customer' },
