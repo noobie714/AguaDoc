@@ -63,6 +63,7 @@ const debtorCount    = state.customers.filter(c => parseFloat(c.balance) > 0).le
     Cash:   'bg-indigo-100 text-indigo-800',
     GCash:  'bg-green-100 text-green-800',
     Online: 'bg-blue-100 text-blue-800',
+    Xendit: 'bg-cyan-100 text-cyan-800',
   };
 
   return (

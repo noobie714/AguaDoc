@@ -514,7 +514,17 @@ app.post('/api/webhooks/xendit', async (req, res) => {
       const orderId = data.reference_id; // the order id we set at session creation
       if (orderId) {
         await pool.query("UPDATE orders SET paymentStatus = 'paid' WHERE id = ?", [orderId]);
-        const [[order]] = await pool.query('SELECT ref FROM orders WHERE id = ?', [orderId]);
+        const [[order]] = await pool.query('SELECT ref, userId, total FROM orders WHERE id = ?', [orderId]);
+
+        // This was the missing piece — Payment History reads from the `payments` table,
+        // which a Xendit-confirmed payment never wrote to before now.
+        if (order) {
+          await pool.query(
+            'INSERT INTO payments (id, custId, orderId, amount, method) VALUES (?,?,?,?,?)',
+            [id(), order.userId, orderId, order.total, 'Xendit']
+          );
+        }
+
         await createNotification({
           audience: 'admin',
           message: `Payment confirmed via Xendit for order ${order?.ref || orderId}.`,
